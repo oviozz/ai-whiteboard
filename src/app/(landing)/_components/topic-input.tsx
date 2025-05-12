@@ -1,11 +1,11 @@
 
 "use client";
-
 import {Input} from "@/components/ui/input";
 import {BookOpen, Code, Cpu, Search, Sparkles, Loader} from "lucide-react";
 import {Button} from "@/components/ui/button";
 import {FormEvent, useRef, useState, useTransition} from "react";
 import {useRouter} from "next/navigation";
+import AuthChecker from "@/components/auth-checker";
 
 export default function TopicInput(){
 
@@ -38,11 +38,11 @@ export default function TopicInput(){
 
     return (
         <>
-            <div className="relative mb-10">
+            <div className="relative mb-10 w-full">
                 <form
                     ref={formRef}
                     onSubmit={navigate_form}
-                    className={"relative rounded-full transition-all duration-300 max-w-2xl mx-auto"}>
+                    className={"relative rounded-full transition-all duration-300 max-w-2xl mx-auto w-full"}>
                     <Input
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
@@ -66,12 +66,13 @@ export default function TopicInput(){
                             )}
                         </Button>
                     </div>
+
                 </form>
             </div>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                 <p className="text-lg">🔥 Popular:</p>
-                <ul className={"flex flex-wrap gap-4"}>
+                <ul className={"flex flex-wrap justify-center gap-4"}>
                     {popularTopics.map((topic, index) => (
                         <Button
                             size={"sm"}

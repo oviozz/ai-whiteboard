@@ -1,31 +1,15 @@
 
-import WhiteboardHeader from "@/app/(main)/whiteboard/[id]/_components/whiteboard-header";
-import {SidebarProvider} from "@/components/ui/sidebar";
-import WhiteboardSidebar from "@/app/(main)/whiteboard/[id]/_components/whiteboard-sidebar";
-import WhiteboardPaintChosen from "@/app/(main)/whiteboard/[id]/_components/whiteboard-paint-chosen";
+// app/(main)/whiteboard/[id]/page.tsx
+import WhiteboardClient from "@/app/(main)/whiteboard/[id]/_components/whiteboard-client";
+import {Id} from "../../../../../convex/_generated/dataModel";
 
-type WhiteboardProps = {
+type WhiteboardPageProps = {
     params: Promise<{
         id: string
     }>
 }
 
-export default async function Whiteboard({ params }: WhiteboardProps){
-
-    const { id } = await params;
-
-    return (
-        <div>
-            <WhiteboardHeader />
-            <div className={"flex w-full"}>
-                <WhiteboardSidebar />
-
-                <div className={"flex flex-col bg-white w-full"}>
-                    <WhiteboardPaintChosen />
-                    {/*Display*/}
-                </div>
-            </div>
-        </div>
-    )
-
+export default async function WhiteboardPage({ params }: WhiteboardPageProps) {
+    const id = (await params).id;
+    return <WhiteboardClient whiteboardId={id as Id<"whiteboards">} />;
 }
