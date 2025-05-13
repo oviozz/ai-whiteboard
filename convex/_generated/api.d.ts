@@ -13,9 +13,11 @@ import type {
   FilterApi,
   FunctionReference,
 } from "convex/server";
+import type * as ai from "../ai.js";
 import type * as http from "../http.js";
 import type * as users from "../users.js";
 import type * as whiteboardActions from "../whiteboardActions.js";
+import type * as whiteboardChatBot from "../whiteboardChatBot.js";
 import type * as whiteboards from "../whiteboards.js";
 
 /**
@@ -27,9 +29,11 @@ import type * as whiteboards from "../whiteboards.js";
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  ai: typeof ai;
   http: typeof http;
   users: typeof users;
   whiteboardActions: typeof whiteboardActions;
+  whiteboardChatBot: typeof whiteboardChatBot;
   whiteboards: typeof whiteboards;
 }>;
 export declare const api: FilterApi<

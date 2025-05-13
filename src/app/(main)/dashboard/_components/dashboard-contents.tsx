@@ -9,14 +9,15 @@ import DeleteWhiteboardButton from "@/app/(main)/dashboard/_components/delete-wh
 import EmptyWhiteboards from "@/app/(main)/dashboard/_components/states/empty-whiteboards";
 import WhiteboardSkeletonLoading from "@/app/(main)/dashboard/_components/states/whiteboard-skeleton-loading";
 import {timeAgo} from "@/lib/utils";
+import {useRouter} from "next/navigation";
 
 export default function DashboardContents({ query }: { query: string | undefined }){
 
     const user = useQuery(api.users.current);
     const whiteboards = useQuery(api.whiteboards.getWhiteboards);
 
-    const isLoading = whiteboards === undefined;
 
+    const isLoading = whiteboards === undefined;
 
     return (
         <div className="flex flex-col gap-2 max-w-screen-2xl mx-auto w-full">

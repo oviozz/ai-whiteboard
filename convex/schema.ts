@@ -1,10 +1,9 @@
-
 import {defineSchema, defineTable} from "convex/server";
 import {v} from "convex/values";
 
 export const pathProperties = v.object({
     type: v.literal("path"),
-    points: v.array(v.object({ x: v.number(), y: v.number() })),
+    points: v.array(v.object({x: v.number(), y: v.number()})),
     color: v.string(),
     strokeWidth: v.number(),
     compositeOperation: v.optional(v.string()), // For eraser or special effects
@@ -57,5 +56,15 @@ export default defineSchema({
     })
         .index("byWhiteboardID", ["whiteboardID"])
         .index("byWhiteboardID_order", ["whiteboardID", "order"]),
-})
+
+    whiteboardChatBot: defineTable({
+        whiteboardID: v.id("whiteboards"),
+        isBot: v.boolean(),
+        text: v.string(),
+        imageURL: v.optional(v.string()),
+        createdAt: v.number(),
+        updatedAt: v.optional(v.number()),
+    })
+        .index("byWhiteboardIDCreatedAt", ["whiteboardID", "createdAt"]),
+});
 

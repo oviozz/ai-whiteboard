@@ -8,7 +8,7 @@ export const getWhiteboards = query({
         const subject = await getCurrentUser(ctx);
 
         if (!subject){
-            throw new Error("User not provided");
+            return []
         }
 
         const whiteboards = await ctx.db
@@ -74,8 +74,17 @@ export const deleteWhiteboard = mutation({
             .withIndex("byWhiteboardID", q => q.eq("whiteboardID", args.whiteboardID))
             .collect();
 
+        const chatbot = await ctx.db
+            .query("whiteboardChatBot")
+            .withIndex("byWhiteboardIDCreatedAt", q => q.eq("whiteboardID", args.whiteboardID))
+            .collect()
+
         await Promise.all(
-            elements_items.map(item => ctx.db.delete(item._id))
+            [
+            ...elements_items,
+            ...chatbot
+            ]
+                .map(item => ctx.db.delete(item._id)),
         );
 
         await ctx.db.delete(whiteboardID);

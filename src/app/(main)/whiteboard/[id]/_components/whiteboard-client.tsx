@@ -9,7 +9,7 @@ import { useQuery, useMutation } from "convex/react";
 import {Id} from "../../../../../../convex/_generated/dataModel";
 import {api} from "../../../../../../convex/_generated/api";
 import { elementData as ConvexElementDataUnion, pathProperties, imageProperties, textProperties } from "../../../../../../convex/schema";
-import SidebarChatbot from "@/app/(main)/whiteboard/[id]/_components/sidebar-chatbot";
+import SidebarChatbot from "@/app/(main)/whiteboard/[id]/_components/sidebar-chatbot/sidebar-chatbot";
 import {SidebarProvider} from "@/components/ui/sidebar";
 
 interface Point { x: number; y: number; }
@@ -525,7 +525,7 @@ export default function WhiteboardClient({ whiteboardId }: { whiteboardId?: Id<"
                         )}
                     </div>
 
-                    <SidebarChatbot />
+                    <SidebarChatbot whiteboardID={whiteboardId} />
                 </div>
             </div>
         </div>

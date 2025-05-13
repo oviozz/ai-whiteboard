@@ -12,14 +12,14 @@ export const current = query({
 
 export const upsertFromClerk = internalMutation({
     args: {
-        data: v.any() as Validator<UserJSON>
+        data: v.any()
     }, // no runtime validation, trust Clerk
     async handler(ctx, { data }) {
         const clerkUserID = data.id; // This is a string from Clerk
         const userAttributes = {
-            email: data.email_addresses[0].email_address!,
-            firstName: data.first_name!,
-            lastName: data.last_name!,
+            email: data?.email_addresses[0].email_address!,
+            firstName: data?.first_name!,
+            lastName: data?.last_name!,
             clerkUserID: clerkUserID, // Store the string from Clerk
         };
 
