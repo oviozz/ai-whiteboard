@@ -77,3 +77,22 @@ export const getPreviousMessages = internalQuery({
         return messages.reverse();
     },
 });
+
+export const deleteAllWhiteboardMessages = mutation({
+    args: {
+        whiteboardID: v.id("whiteboards"),
+    },
+    handler: async (ctx, args) => {
+
+        const chatbot = await ctx.db
+            .query("whiteboardChatBot")
+            .withIndex("byWhiteboardIDCreatedAt", q => q.eq("whiteboardID", args.whiteboardID))
+            .collect()
+
+        await Promise.all(
+            chatbot.map(item => ctx.db.delete(item._id)),
+        );
+
+        return { success: true, message: "Chat cleared successfully "};
+    }
+})

@@ -2,11 +2,12 @@
 "use client";
 import Link from "next/link";
 import {ArrowLeft} from "lucide-react";
+import {Button} from "@/components/ui/button";
 
 export default function WhiteboardHeader() {
 
     return (
-        <div className="px-4 py-2 flex justify-end sm:justify-between items-center border-b border-gray-200 bg-white">
+        <div className="px-4 py-1 flex justify-end sm:justify-between items-center bg-white border-b border-gray-100">
 
             <div className={"flex items-center gap-2 select-none"}>
 
@@ -16,6 +17,22 @@ export default function WhiteboardHeader() {
                     <ArrowLeft className={"w-4 h-4"}/>
                     Go Back
                 </Link>
+            </div>
+
+            <div className={"hidden sm:flex gap-2"}>
+                <Button
+                    variant={"neutral"}
+                    size={"sm"}
+                >
+                    Generate a Problem
+                </Button>
+
+                <Button
+                    variant={"default"}
+                    size={"sm"}
+                >
+                    Quiz me
+                </Button>
             </div>
 
         </div>

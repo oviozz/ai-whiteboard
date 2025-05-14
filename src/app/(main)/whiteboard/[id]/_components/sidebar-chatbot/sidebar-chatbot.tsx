@@ -1,32 +1,35 @@
-
 "use client";
-import { useState, useRef, useEffect, useTransition, useMemo } from 'react';
-import { Send, Bot, X, Loader } from 'lucide-react';
+import React, {useState, useRef, useEffect, useTransition, useMemo} from 'react';
+import {Send, Bot, X, Loader, ChevronUp} from 'lucide-react';
 import ChatbotSuggestion from "@/app/(main)/whiteboard/[id]/_components/sidebar-chatbot/chatbot-suggestion"; // Assuming this exists
-import { useMutation, useQuery, useAction } from "convex/react";
-import { api } from "../../../../../../../convex/_generated/api"; // Adjust path as needed
-import { Id } from "../../../../../../../convex/_generated/dataModel";
+import {useMutation, useQuery, useAction} from "convex/react";
+import {api} from "../../../../../../../convex/_generated/api"; // Adjust path as needed
+import {Id} from "../../../../../../../convex/_generated/dataModel";
 import {cn, timeAgo} from "@/lib/utils";
-import MarkdownRenderer from "@/components/markdown-renderer"; // Assuming this exists
+import MarkdownRenderer from "@/components/markdown-renderer";
+import {toast} from "sonner"; // Assuming this exists
 
 type ChatbotSheetProps = {
     whiteboardID: Id<"whiteboards">;
 }
 
-export default function ChatbotSheet({ whiteboardID }: ChatbotSheetProps) {
+function SidebarChatbot({whiteboardID}: ChatbotSheetProps) {
+
     const [isSendingUserMessage, startSendingUserMessage] = useTransition();
 
-    const messages = useQuery(api.whiteboardChatBot.getAllMessages, { whiteboardID });
+    const messages = useQuery(api.whiteboardChatBot.getAllMessages, {whiteboardID});
     const userSendMessage = useMutation(api.whiteboardChatBot.sendMessage);
     const generateAIResponseAction = useAction(api.ai.generateResponse);
 
     const [inputValue, setInputValue] = useState('');
-    const [isCollapsed, setIsCollapsed] = useState(false);
+    const [isCollapsed, setIsCollapsed] = useState(true);
     const [activeBotMessageId, setActiveBotMessageId] = useState<Id<"whiteboardChatBot"> | null>(null);
     const [errorFromAI, setErrorFromAI] = useState<string | null>(null);
 
     const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
     const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+    const removeAllChatMessages = useMutation(api.whiteboardChatBot.deleteAllWhiteboardMessages);
 
     const isGeneratingResponse = useMemo(() => {
         if (!activeBotMessageId) return false;
@@ -81,7 +84,7 @@ export default function ChatbotSheet({ whiteboardID }: ChatbotSheetProps) {
     };
 
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        messagesEndRef.current?.scrollIntoView({behavior: "smooth"});
     }, [messages]);
 
     // Auto-focus textarea when expanded and not generating
@@ -105,20 +108,47 @@ export default function ChatbotSheet({ whiteboardID }: ChatbotSheetProps) {
     return (
         <div
             className={`fixed bottom-0 right-4 flex flex-col bg-white border border-b-0 border-gray-300 rounded-t-lg transition-all duration-300 ease-in-out ${isCollapsed ? 'h-[52px]' : 'h-9/10'} min-h-[52px]`}
-            style={{ width: 'clamp(320px, 90vw, 520px)' }}
+            style={{width: 'clamp(320px, 90vw, 520px)'}}
         >
-            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200 cursor-pointer" onClick={() => setIsCollapsed(!isCollapsed)}>
+            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200 cursor-pointer"
+                 onClick={() => setIsCollapsed(!isCollapsed)}>
                 <div className="flex items-center">
-                    <Bot className="h-6 w-6 text-blue-600 mr-2" />
+                    <Bot className="h-6 w-6 text-blue-600 mr-2"/>
                     <h2 className="font-semibold text-gray-700">Whiteboard AI</h2>
                 </div>
-                <button
-                    onClick={(e) => { e.stopPropagation(); setIsCollapsed(!isCollapsed); }}
-                    className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md"
-                    aria-label={isCollapsed ? "Expand chat" : "Collapse chat"}
-                >
-                    <X className="h-5 w-5" />
-                </button>
+
+                <div className={"flex items-center gap-2"}>
+
+                    <button
+                        onClick={async (e) => {
+                            e.stopPropagation();
+                            if (whiteboardID) {
+                                const {success, message} = await removeAllChatMessages({whiteboardID});
+                                if (success) {
+                                    toast.success(message);
+                                }
+                            }
+                        }}
+                        className={"bg-red-500 text-white rounded-xl px-2 py-1 text-sm hover:cursor-pointer hover:bg-red-600"}
+                    >
+                        Clear Chat
+                    </button>
+
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setIsCollapsed(!isCollapsed);
+                        }}
+                        className="p-1.5 text-gray-500 hover:text-gray-700 bg-gray-100 rounded-md"
+                        aria-label={isCollapsed ? "Expand chat" : "Collapse chat"}
+                    >
+                        { isCollapsed ? (
+                            <ChevronUp className={"w-5 h-5"} />
+                        ) : (
+                            <X className="h-5 w-5"/>
+                        )}
+                    </button>
+                </div>
             </div>
 
             {!isCollapsed && (
@@ -137,10 +167,12 @@ export default function ChatbotSheet({ whiteboardID }: ChatbotSheetProps) {
                                     message.isBot ? 'items-start' : 'items-end'
                                 )}
                             >
-                                <div className={cn("flex gap-2 items-end", message.isBot ? "flex-row" : "flex-row-reverse")}>
+                                <div
+                                    className={cn("flex gap-2 items-end", message.isBot ? "flex-row" : "flex-row-reverse")}>
                                     {message.isBot && (
-                                        <div className="flex-shrink-0 h-7 w-7 bg-blue-500 text-white rounded-full flex items-center justify-center self-start">
-                                            <Bot size={16} />
+                                        <div
+                                            className="flex-shrink-0 h-7 w-7 bg-blue-500 text-white rounded-full flex items-center justify-center self-start">
+                                            <Bot size={16}/>
                                         </div>
                                     )}
                                     <div
@@ -155,7 +187,8 @@ export default function ChatbotSheet({ whiteboardID }: ChatbotSheetProps) {
                                             content={message.text === "..." && isGeneratingResponse && message._id === activeBotMessageId ? "Thinking..." : message.text}
                                         />
                                         {message.isBot && isGeneratingResponse && message._id === activeBotMessageId && message.text === "..." && (
-                                            <Loader className="h-4 w-4 animate-spin inline-block ml-1.5 text-blue-400 dark:text-blue-500 mt-1" />
+                                            <Loader
+                                                className="h-4 w-4 animate-spin inline-block ml-1.5 text-blue-400 dark:text-blue-500 mt-1"/>
                                         )}
                                     </div>
                                 </div>
@@ -173,7 +206,7 @@ export default function ChatbotSheet({ whiteboardID }: ChatbotSheetProps) {
                                 {errorFromAI}
                             </div>
                         )}
-                        <div ref={messagesEndRef} />
+                        <div ref={messagesEndRef}/>
                     </div>
 
                     <div className="flex flex-col gap-3 p-3 border-t border-gray-200 bg-white">
@@ -203,16 +236,18 @@ export default function ChatbotSheet({ whiteboardID }: ChatbotSheetProps) {
                                 aria-label="Send message"
                             >
                                 {(isSendingUserMessage || (isGeneratingResponse && activeBotMessageId)) ? ( // Show loader if processing or active bot message is generating
-                                    <Loader className={"w-5 h-5 animate-spin"} />
+                                    <Loader className={"w-5 h-5 animate-spin"}/>
                                 ) : (
-                                    <Send className="w-5 h-5" />
+                                    <Send className="w-5 h-5"/>
                                 )}
                             </button>
                         </div>
-                         <ChatbotSuggestion onClickSuggestion={(val) => setInputValue(val)} />
+                        <ChatbotSuggestion onClickSuggestion={(val) => setInputValue(val)}/>
                     </div>
                 </>
             )}
         </div>
     );
 }
+
+export default React.memo(SidebarChatbot);

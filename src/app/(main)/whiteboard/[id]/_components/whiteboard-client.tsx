@@ -490,7 +490,7 @@ export default function WhiteboardClient({ whiteboardId }: { whiteboardId?: Id<"
     if (clientError) return ( <div className="flex flex-col items-center justify-center h-screen p-4 text-center"> <h2 className="text-2xl font-semibold text-red-600 mb-3">Error</h2> <p className="text-slate-700">{clientError}</p> </div> );
 
     return (
-        <div className="flex flex-col h-screen w-full bg-slate-100 dark:bg-slate-900">
+        <div className="flex flex-col w-full bg-slate-100 dark:bg-slate-900">
             <WhiteboardHeader />
             <div className="flex flex-1 w-full overflow-hidden">
                 <WhiteboardSidebar
