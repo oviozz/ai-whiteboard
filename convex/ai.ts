@@ -3,7 +3,9 @@ import {internal} from "./_generated/api";
 import {action, internalAction, internalMutation} from "./_generated/server";
 import {v} from "convex/values";
 import {Id} from "./_generated/dataModel";
-import {CoreMessage, streamText} from "ai";
+import {CoreMessage, ImagePart, streamText, TextPart, tool} from "ai";
+import {z} from "zod";
+import {fuzzyIncludes} from "../src/lib/utils";
 
 let googleAIClient: GoogleGenerativeAIProvider | null = null;
 
@@ -26,10 +28,10 @@ export const generateResponse = action({
     args: {
         whiteboardID: v.id("whiteboards"),
         userMessage: v.string(),
-        imageURL: v.optional(v.string())
+        storageID: v.optional(v.id("_storage"))
     },
     handler: async (ctx, args) => {
-        const {whiteboardID, userMessage} = args;
+        const {whiteboardID, userMessage, storageID} = args;
 
         try {
             getGoogleAIClient();
@@ -50,11 +52,27 @@ export const generateResponse = action({
         }
 
         try {
-            await ctx.scheduler.runAfter(0, internal.ai._streamAndSaveResponse, {
-                botMessageId,
-                userMessage,
-                whiteboardID,
-            });
+
+            if (storageID){
+
+                const image_url = await ctx.runQuery(internal.whiteboardActions.getInternalImageUrl, {
+                    storageId: storageID
+                });
+
+                await ctx.scheduler.runAfter(0, internal.ai._streamAndSaveResponse, {
+                    botMessageId,
+                    userMessage,
+                    whiteboardID,
+                    imageURL: image_url || undefined
+                });
+
+            } else {
+                await ctx.scheduler.runAfter(0, internal.ai._streamAndSaveResponse, {
+                    botMessageId,
+                    userMessage,
+                    whiteboardID,
+                });
+            }
         } catch (e: any) {
             console.error("Failed to schedule _streamAndSaveResponse action:", e.message);
             try {
@@ -98,7 +116,7 @@ export const _streamAndSaveResponse = internalAction({
     },
     handler: async (ctx, args) => {
 
-        const {botMessageId, userMessage, whiteboardID} = args;
+        const {botMessageId, userMessage, whiteboardID, imageURL} = args;
         const currentGoogleClient = getGoogleAIClient();
 
         try {
@@ -126,38 +144,86 @@ export const _streamAndSaveResponse = internalAction({
                 content: msg.text,
             }));
 
-            const systemPromptContent = `You are a highly visual, concise whiteboard tutor for ${topic}${problem_statement ? ` focused on: "${problem_statement}"` : ''}. Your answers are extremely brief and direct - never verbose.
+            const fuzzyTriggers = [
+                "add it to the whiteboard",
+                "add this to the whiteboard",
+                "save it to whiteboard",
+                "insert in whiteboard",
+                "display it in whiteboard",
+                "put it on the whiteboard",
+                "add this to the board",
+                "show it on whiteboard",
+                "show it in the whiteboard",
+                "insert it into the whiteboard",
+                "put this on the whiteboard",
+                "send it to the whiteboard",
+                "place this in whiteboard",
+                "give it in the whiteboard",
+                "generate a problem and add it",
+                "create a problem for the whiteboard"
+            ];
 
-**RESPONSE RULES (CRITICAL):**
-- Keep ALL responses under 5 sentences
-- Give ONLY what was specifically asked for
-- Never provide lengthy explanations unless explicitly requested
-- Prioritize visual representations over text whenever possible
-- Use visuals + minimal text instead of paragraphs of explanation
-- NEVER provide solutions to problems until explicitly asked to do so
-- For practice problems, give ONLY the problem statement first, wait for the user to attempt it
+            const isProblemRequest = fuzzyIncludes(userMessage, fuzzyTriggers);
 
-**FORMAT YOUR RESPONSES WITH:**
-1. **Markdown** for structure:
-   * Lists for steps
-   * Bold for key points
-   * Code blocks for structured data
-   * Blockquotes for important notes
+            let systemPromptContent = `You are a highly visual, concise whiteboard tutor for ${topic}${problem_statement ? ` focused on: "${problem_statement}"` : ''}. Your answers are extremely brief and direct - never verbose.
 
-2. **LaTeX** for ALL math:
-   * Inline: $E = mc^2$
-   * Display: $x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$
+            **RESPONSE RULES (CRITICAL):**
+            - Keep ALL responses under 5 sentences
+            - Give ONLY what was specifically asked for
+            - Never provide lengthy explanations unless explicitly requested
+            - Prioritize visual representations over text whenever possible
+            - Use visuals + minimal text instead of paragraphs of explanation
+            - NEVER provide solutions to problems until explicitly asked to do so
+            - For practice problems, give ONLY the problem statement first, wait for the user to attempt it
+            
+            **FORMAT YOUR RESPONSES WITH:**
+            1. **Markdown** for structure:
+               * Lists for steps
+               * Bold for key points
+               * Code blocks for structured data
+               * Blockquotes for important notes
+            
+            2. **LaTeX** for ALL math:
+               * Inline: $E = mc^2$
+               * Display: $x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$
+            
+            **RESPONSE TYPES:**
+            - **Questions:** Give the direct answer only, not explanation
+            - **Problems:** Present the problem clearly WITHOUT solution steps. Only provide solution when user explicitly asks "show solution" or similar
+            - **Concepts:** Use visual diagram + 2-3 sentence explanation maximum
+            
+            Remember:
+            - You are expert in ${topic}${problem_statement ? ` specifically for "${problem_statement}"` : ''}
+            - Always favor visual clarity over detailed text
+            - Stay strictly focused on what was asked - nothing more
+            - Wait for user to request solutions - don't solve problems automatically
+        
+            `;
 
-**RESPONSE TYPES:**
-- **Questions:** Give the direct answer only, not explanation
-- **Problems:** Present the problem clearly WITHOUT solution steps. Only provide solution when user explicitly asks "show solution" or similar
-- **Concepts:** Use visual diagram + 2-3 sentence explanation maximum
+            if (isProblemRequest) {
+                systemPromptContent += `
+                **IMPORTANT FOR PROBLEMS:**
+                - When you generate a problem, ALWAYS say "I'll add this problem to your whiteboard:" followed by the problem
+                - Always format your response as: "I'll add this problem to your whiteboard: [PROBLEM TEXT]"
+                - Make sure to include the exact phrase "add this problem to your whiteboard" or "save this to your whiteboard"
+                `
+            }
 
-Remember:
-- You are expert in ${topic}${problem_statement ? ` specifically for "${problem_statement}"` : ''}
-- Always favor visual clarity over detailed text
-- Stay strictly focused on what was asked - nothing more
-- Wait for user to request solutions - don't solve problems automatically`;
+
+            let userContent: string | Array<TextPart | ImagePart> = userMessage;
+
+            if (imageURL) {
+                userContent = [
+                    { type: "text", text: userMessage } as TextPart,
+                    {
+                        type: "image",
+                        image: imageURL
+                    } as ImagePart
+                ];
+            } else {
+                userContent = userMessage;
+            }
+
 
             const messagesToAI: CoreMessage[] = [
                 {
@@ -165,11 +231,14 @@ Remember:
                     content: systemPromptContent
                 },
                 ...historyMessages,
-                {role: 'user', content: userMessage}
+                {
+                    role: 'user',
+                    content: userContent
+                }
             ];
 
             const {textStream} = await streamText({
-                model: currentGoogleClient('models/gemini-1.5-flash-latest', {
+                model: currentGoogleClient('gemini-2.0-flash-exp', {
                     useSearchGrounding: true,
                 }), // Or your preferred model
                 messages: messagesToAI,
@@ -195,6 +264,13 @@ Remember:
                 messageId: botMessageId,
                 newText: accumulatedText.trim() === "" ? "Sorry, I couldn't generate a response for that." : accumulatedText,
             });
+
+            if (isProblemRequest){
+                await ctx.runMutation(internal.whiteboardActions.addRandomText, {
+                    whiteboardID,
+                    text: accumulatedText,
+                });
+            }
 
         } catch (error: any) {
             console.error(`Error streaming AI response for botMessageId ${botMessageId}:`, error.message);

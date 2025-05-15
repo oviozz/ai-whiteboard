@@ -15,7 +15,8 @@ export const imageProperties = v.object({
     y: v.number(),
     width: v.number(),
     height: v.number(),
-    imageUrl: v.string(), // Or v.id("_storage") if using Convex file storage
+    imageUrl: v.optional(v.string()), // Or v.id("_storage") if using Convex file storage
+    storageId: v.id("_storage"),
     // For Convex storage, you'd likely store storageId and resolve to URL on client or in query
 });
 
@@ -30,7 +31,11 @@ export const textProperties = v.object({
 });
 
 // Union of all possible element properties
-export const elementData = v.union(pathProperties, imageProperties, textProperties);
+export const elementData = v.union(
+    pathProperties,
+    imageProperties,
+    textProperties,
+);
 
 export default defineSchema({
     users: defineTable({

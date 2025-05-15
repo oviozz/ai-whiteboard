@@ -86,18 +86,24 @@ export const deleteWhiteboard = mutation({
             .withIndex("byWhiteboardID", q => q.eq("whiteboardID", args.whiteboardID))
             .collect();
 
+
+
         const chatbot = await ctx.db
             .query("whiteboardChatBot")
             .withIndex("byWhiteboardIDCreatedAt", q => q.eq("whiteboardID", args.whiteboardID))
             .collect()
 
-        await Promise.all(
-            [
-            ...elements_items,
-            ...chatbot
-            ]
-                .map(item => ctx.db.delete(item._id)),
-        );
+        const itemsToDelete = [...elements_items, ...chatbot];
+
+        await Promise.all([
+            ...itemsToDelete.map(item => ctx.db.delete(item._id)),
+
+            ...elements_items.map(element => {
+                return element.element.type === "image"
+                    ? ctx.storage.delete(element.element.storageId)
+                    : Promise.resolve();
+            })
+        ]);
 
         await ctx.db.delete(whiteboardID);
 

@@ -34,3 +34,60 @@ export function timeAgo(input: string | number): string {
   if (hours < 24) return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
   return `${days} day${days !== 1 ? 's' : ''} ago`;
 }
+
+export function fuzzyIncludes(text: string, targets: string[], threshold = 0.7): boolean {
+  // Normalize the text for comparison
+  const normalize = (str: string) => str.toLowerCase().replace(/\s+/g, ' ').trim();
+
+  // Check for exact substring matches first (for efficiency)
+  const normalizedText = normalize(text);
+  for (const target of targets) {
+    const normalizedTarget = normalize(target);
+    if (normalizedText.includes(normalizedTarget)) {
+      return true;
+    }
+  }
+
+  const similarity = (a: string, b: string) => {
+    a = normalize(a);
+    b = normalize(b);
+
+    const longer = a.length > b.length ? a : b;
+    const shorter = a.length > b.length ? b : a;
+    const longerLength = longer.length;
+
+    if (longerLength === 0) return 1.0;
+
+    const editDistance = levenshteinDistance(longer, shorter);
+    return (longerLength - editDistance) / longerLength;
+  };
+
+  for (const target of targets) {
+    if (similarity(text, target) >= threshold) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function levenshteinDistance(a: string, b: string): number {
+  const matrix: number[][] = Array.from({ length: b.length + 1 }, () => Array(a.length + 1).fill(0));
+
+  for (let i = 0; i <= b.length; i++) matrix[i][0] = i;
+  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      matrix[i][j] = b[i - 1] === a[j - 1]
+          ? matrix[i - 1][j - 1]
+          : Math.min(
+              matrix[i - 1][j] + 1,    // deletion
+              matrix[i][j - 1] + 1,    // insertion
+              matrix[i - 1][j - 1] + 1 // substitution
+          );
+    }
+  }
+
+  return matrix[b.length][a.length];
+}

@@ -7,7 +7,8 @@ import {api} from "../../../../../../../convex/_generated/api"; // Adjust path a
 import {Id} from "../../../../../../../convex/_generated/dataModel";
 import {cn, timeAgo} from "@/lib/utils";
 import MarkdownRenderer from "@/components/markdown-renderer";
-import {toast} from "sonner"; // Assuming this exists
+import {toast} from "sonner";
+import useScreenshot from "@/hooks/use-screenshot"; // Assuming this exists
 
 type ChatbotSheetProps = {
     whiteboardID: Id<"whiteboards">;
@@ -15,6 +16,7 @@ type ChatbotSheetProps = {
 
 function SidebarChatbot({whiteboardID}: ChatbotSheetProps) {
 
+    const { screenshotBlog } = useScreenshot();
     const [isSendingUserMessage, startSendingUserMessage] = useTransition();
 
     const messages = useQuery(api.whiteboardChatBot.getAllMessages, {whiteboardID});
@@ -28,6 +30,7 @@ function SidebarChatbot({whiteboardID}: ChatbotSheetProps) {
 
     const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
     const messagesEndRef = useRef<HTMLDivElement | null>(null);
+    const generateUploadUrlMutation = useMutation(api.whiteboardActions.generateUploadUrl);
 
     const removeAllChatMessages = useMutation(api.whiteboardChatBot.deleteAllWhiteboardMessages);
 
@@ -64,9 +67,18 @@ function SidebarChatbot({whiteboardID}: ChatbotSheetProps) {
 
         setActiveBotMessageId(null); // Reset before new AI call
         try {
+
+            const screenshot_blob = await screenshotBlog();
+            const uploadUrl = await generateUploadUrlMutation();
+            const uploadResult = await fetch(uploadUrl, { method: "POST", body: screenshot_blob });
+
+            if (!uploadResult.ok) throw new Error(`Upload failed: ${uploadResult.statusText}`);
+            const { storageId } = await uploadResult.json();
+
             const result = await generateAIResponseAction({
                 whiteboardID,
                 userMessage: currentUserMessage,
+                ...(storageId) && { storageID: storageId }
             });
 
             if (result && result.success && result.botMessageId) {
@@ -105,6 +117,8 @@ function SidebarChatbot({whiteboardID}: ChatbotSheetProps) {
     }, [errorFromAI, activeBotMessageId, messages]);
 
 
+    console.log(isSendingUserMessage, isGeneratingResponse);
+
     return (
         <div
             className={`fixed bottom-0 right-4 flex flex-col bg-white border border-b-0 border-gray-300 rounded-t-lg transition-all duration-300 ease-in-out ${isCollapsed ? 'h-[52px]' : 'h-9/10'} min-h-[52px]`}
@@ -120,12 +134,15 @@ function SidebarChatbot({whiteboardID}: ChatbotSheetProps) {
                 <div className={"flex items-center gap-2"}>
 
                     <button
+                        type={"button"}
                         onClick={async (e) => {
                             e.stopPropagation();
                             if (whiteboardID) {
                                 const {success, message} = await removeAllChatMessages({whiteboardID});
                                 if (success) {
                                     toast.success(message);
+                                    setActiveBotMessageId(null);
+                                    return;
                                 }
                             }
                         }}
@@ -135,6 +152,7 @@ function SidebarChatbot({whiteboardID}: ChatbotSheetProps) {
                     </button>
 
                     <button
+                        type={"button"}
                         onClick={(e) => {
                             e.stopPropagation();
                             setIsCollapsed(!isCollapsed);
