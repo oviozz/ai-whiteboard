@@ -1,7 +1,10 @@
-import {query, mutation, internalQuery, internalMutation} from "./_generated/server";
+import {query, mutation, internalQuery, internalMutation, action} from "./_generated/server";
 import {v} from "convex/values";
 import {elementData as elementDataSchema} from "./schema";
 import {internal} from "./_generated/api";
+import {getGoogleAIClient} from "../src/lib/gemini-client";
+import {CoreMessage, generateText, ImagePart, streamText, TextPart} from "ai";
+import {containsWhiteboardTrigger} from "../src/lib/utils";
 
 
 export const getWhiteboardContent = query({
@@ -197,9 +200,11 @@ export const addRandomText = internalMutation({
     args: {
         whiteboardID: v.id("whiteboards"),
         text: v.string(),
+        fontSize: v.optional(v.number()),
+        fontColor: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
-        const {whiteboardID, text} = args;
+        const {whiteboardID, text, fontSize, fontColor} = args;
 
         try {
 
@@ -217,9 +222,9 @@ export const addRandomText = internalMutation({
                     x,
                     y,
                     text: text,
-                    color: "#000000",
+                    color: fontColor || "#000000",
                     fontFamily: "Arial",
-                    fontSize: 26,
+                    fontSize: fontSize || 26,
                 },
                 order: 0,
                 createdAt: Date.now().toString(),
@@ -246,3 +251,137 @@ export const addRandomText = internalMutation({
         }
     },
 });
+
+export const checkWhiteboardElements = internalQuery({
+    args: {
+        whiteboardID: v.id("whiteboards")
+    },
+    handler: async (ctx, args) => {
+        return await ctx.db
+            .query("whiteboardElements")
+            .withIndex("byWhiteboardID", q => q.eq("whiteboardID", args.whiteboardID))
+            .take(1)
+    }
+})
+
+export const solveItAll = action({
+    args: {
+        whiteboardID: v.id("whiteboards"),
+        storageID: v.id("_storage"),
+    },
+    handler: async (ctx, args) => {
+
+        const {whiteboardID, storageID} = args;
+
+        const elements_items = await ctx.runQuery(internal.whiteboardActions.checkWhiteboardElements, {
+            whiteboardID
+        })
+
+        if (elements_items.length === 0) {
+            return {success: false, message: "There is nothing there to solve"}
+        }
+
+
+
+        try {
+            const currentGoogleClient = getGoogleAIClient();
+
+            const whiteboard = await ctx.runQuery(internal.whiteboards.getWhiteboardByID, {
+                    whiteboardID
+                })
+
+            if (!whiteboard){
+                return { success: false, message: "Whiteboard not found" }
+            }
+
+            const image_url = await ctx.runQuery(internal.whiteboardActions.getInternalImageUrl, {
+                storageId: storageID
+            });
+
+            const { topic, problem_statement } = whiteboard;
+
+            let systemPromptContent = `You are a highly visual, concise whiteboard tutor that gives best solutions for ${topic}${problem_statement ? ` focused on: "${problem_statement}"` : ''}. Your answers are extremely brief and direct - never verbose.
+
+            **RESPONSE RULES (CRITICAL):**
+                - Always solve the questions in the image with clear, step-by-step detailed solutions.
+                - Keep each step concise and focused.
+                - When the user submits a step, respond with a short, clear explanation:
+                  * Confirm if the step is correct or incorrect
+                  * Point out errors briefly if any
+                  * Provide focused hints or corrections
+                - Encourage when steps are correct
+
+            **FORMAT YOUR RESPONSES WITH:**
+            1. **Markdown** for structure:
+               * Lists for steps
+               * Bold for key points
+               * Code blocks for structured data
+               * Blockquotes for important notes
+            
+            2. **LaTeX** for ALL math:
+               * Inline: $E = mc^2$
+               * Display: $x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$
+            
+          
+            Remember:
+            - You are expert in ${topic}${problem_statement ? ` specifically for "${problem_statement}"` : ''}
+            - Always favor clarity and brevity
+            - You solve the problem and give the best and accurate solution
+        `;
+
+
+            const userContent = [
+                { type: "text", text: "Solve this problem and give me the answers step by step" } as TextPart,
+                {
+                    type: "image",
+                    image: image_url
+                } as ImagePart
+            ];
+
+            const messagesToAI: CoreMessage[] = [
+                {
+                    role: 'system',
+                    content: systemPromptContent
+                },
+                {
+                    role: 'user',
+                    content: userContent
+                }
+            ];
+
+            const generateTextResult = await generateText({
+                model: currentGoogleClient('gemini-2.0-flash-exp', ),
+                messages: messagesToAI,
+            });
+
+            const { text } = generateTextResult;
+
+            if (text){
+                await ctx.runMutation(internal.whiteboardActions.addRandomText, {
+                    whiteboardID,
+                    text: text
+                });
+            }
+
+            return { success: true, message: "Solved problem successfully" }
+
+        } catch (error: any) {
+            console.log(error);
+            const errorMessage = error.message?.includes("API key not valid") || error.message?.includes("API_KEY_INVALID")
+                ? "AI Service Error: Invalid API Key."
+                : "Sorry, an unexpected error occurred while generating a response.";
+
+            try {
+                await ctx.runMutation(internal.whiteboardActions.addRandomText, {
+                    whiteboardID,
+                    text: "Something happened. Try again!",
+                    fontSize: 20,
+                    fontColor: "red"
+                });
+
+            } catch (dbError: any) {
+                console.error("Failed to update bot message with error text:", dbError.message);
+            }
+        }
+    }
+})

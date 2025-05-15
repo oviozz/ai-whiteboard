@@ -22,6 +22,7 @@ import SidebarChatbot from "@/app/(main)/whiteboard/[id]/_components/sidebar-cha
 import { Loader } from "lucide-react" // Adjust path
 import TextEditPopover from "@/components/text-edit-popover";
 import MarkdownRenderer from "@/components/markdown-renderer";
+import SolveItAllProvider from "@/components/providers/solve-it-all-provider";
 
 // --- Constants ---
 const MIN_ZOOM = 0.1
@@ -1674,7 +1675,9 @@ export default function WhiteboardClient({ whiteboardId }: { whiteboardId?: Id<"
 
     return (
         <div className="flex flex-col w-full h-screen bg-slate-100 dark:bg-slate-900">
-            <WhiteboardHeader whiteboardName={whiteboardTopic || "Whiteboard"} />
+            <WhiteboardHeader
+                whiteboardID={whiteboardId}
+                whiteboardName={whiteboardTopic || "Whiteboard"} />
             <div className="flex flex-1 w-full overflow-hidden">
                 <WhiteboardSidebar
                     whiteboardID={whiteboardId as Id<"whiteboards">}
@@ -1700,20 +1703,22 @@ export default function WhiteboardClient({ whiteboardId }: { whiteboardId?: Id<"
                         onDragLeave={() => canvasRef.current?.classList.remove("drag-over-active")}
                         onDrop={handleDrop}
                     >
-                        <canvas
-                            ref={canvasRef}
-                            onMouseDown={handleMouseDown}
-                            onMouseMove={handleMouseMove}
-                            onMouseUp={handleMouseUp}
-                            onMouseLeave={handleMouseLeave}
-                            onTouchStart={handleTouchStart}
-                            onTouchMove={handleTouchMove}
-                            onTouchEnd={handleTouchEnd}
-                            onTouchCancel={handleTouchEnd}
-                            onWheel={handleWheel}
-                            onDoubleClick={handleDoubleClick}
-                            className="w-full h-full block"
-                        />
+                        <SolveItAllProvider>
+                            <canvas
+                                ref={canvasRef}
+                                onMouseDown={handleMouseDown}
+                                onMouseMove={handleMouseMove}
+                                onMouseUp={handleMouseUp}
+                                onMouseLeave={handleMouseLeave}
+                                onTouchStart={handleTouchStart}
+                                onTouchMove={handleTouchMove}
+                                onTouchEnd={handleTouchEnd}
+                                onTouchCancel={handleTouchEnd}
+                                onWheel={handleWheel}
+                                onDoubleClick={handleDoubleClick}
+                                className="w-full h-full block"
+                            />
+                        </SolveItAllProvider>
 
                         {/* Render all text elements as Markdown */}
                         <div ref={markdownContainerRef} className="absolute inset-0 pointer-events-none">

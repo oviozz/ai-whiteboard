@@ -3,6 +3,18 @@ import {internalQuery, mutation, query} from "./_generated/server";
 import {v} from "convex/values";
 import {getCurrentUser} from "./users";
 
+export const getWhiteboardID = query({
+    args: {
+        whiteboardID: v.id("whiteboards")
+    },
+    handler: async (ctx, args) => {
+
+        const whiteboards = await ctx.db.get(args.whiteboardID);
+
+        return whiteboards
+    }
+})
+
 export const getWhiteboards = query({
     handler: async (ctx) => {
         const subject = await getCurrentUser(ctx);
