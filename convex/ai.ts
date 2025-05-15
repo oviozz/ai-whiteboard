@@ -3,9 +3,8 @@ import {internal} from "./_generated/api";
 import {action, internalAction, internalMutation} from "./_generated/server";
 import {v} from "convex/values";
 import {Id} from "./_generated/dataModel";
-import {CoreMessage, ImagePart, streamText, TextPart, tool} from "ai";
-import {z} from "zod";
-import {fuzzyIncludes} from "../src/lib/utils";
+import {CoreMessage, ImagePart, streamText, TextPart} from "ai";
+import {containsWhiteboardTrigger} from "../src/lib/utils";
 
 let googleAIClient: GoogleGenerativeAIProvider | null = null;
 
@@ -146,6 +145,7 @@ export const _streamAndSaveResponse = internalAction({
 
             const fuzzyTriggers = [
                 "add it to the whiteboard",
+                "add it to whiteboard",
                 "add this to the whiteboard",
                 "save it to whiteboard",
                 "insert in whiteboard",
@@ -163,7 +163,7 @@ export const _streamAndSaveResponse = internalAction({
                 "create a problem for the whiteboard"
             ];
 
-            const isProblemRequest = fuzzyIncludes(userMessage, fuzzyTriggers);
+            const isProblemRequest = containsWhiteboardTrigger(userMessage, fuzzyTriggers);
 
             let systemPromptContent = `You are a highly visual, concise whiteboard tutor for ${topic}${problem_statement ? ` focused on: "${problem_statement}"` : ''}. Your answers are extremely brief and direct - never verbose.
 
@@ -266,9 +266,14 @@ export const _streamAndSaveResponse = internalAction({
             });
 
             if (isProblemRequest){
+                const parse_question = accumulatedText.replace(
+                    `I'll add this problem to your whiteboard:`,
+                    ""
+                );
+
                 await ctx.runMutation(internal.whiteboardActions.addRandomText, {
                     whiteboardID,
-                    text: accumulatedText,
+                    text: parse_question || accumulatedText,
                 });
             }
 

@@ -89,6 +89,7 @@ export const deleteAllWhiteboardMessages = mutation({
             .withIndex("byWhiteboardIDCreatedAt", q => q.eq("whiteboardID", args.whiteboardID))
             .collect()
 
+
         await Promise.all(
             chatbot.map(item => ctx.db.delete(item._id)),
         );

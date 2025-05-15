@@ -24,7 +24,7 @@ export default function WhiteboardHeader() {
                     variant={"neutral"}
                     size={"sm"}
                 >
-                    Generate a Problem
+                    Solve it all
                 </Button>
 
                 <Button
