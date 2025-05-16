@@ -41,6 +41,7 @@ export const generateResponse = action({
                     storageId: storageID
                 });
 
+
                 await ctx.scheduler.runAfter(0, internal.ai._streamAndSaveResponse, {
                     botMessageId,
                     userMessage,
@@ -180,7 +181,7 @@ export const _streamAndSaveResponse = internalAction({
             - Always favor visual clarity over detailed text
             - Stay strictly focused on what was asked - nothing more
             - Wait for user to request solutions - don't solve problems automatically
-        
+            
             `;
 
             if (isProblemRequest) {

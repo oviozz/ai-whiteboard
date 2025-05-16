@@ -12,7 +12,7 @@ export default function BrandTitle({className}: BrandTitleProps) {
         <h1
             className={cn("flex items-center gap-2 text-lime-500 text-2xl rounded-md font-bold px-3 py-1", className)}
         >
-            Whiteboard
+            Problem Pilot
         </h1>
     )
 

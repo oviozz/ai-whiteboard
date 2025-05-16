@@ -116,9 +116,6 @@ function SidebarChatbot({whiteboardID}: ChatbotSheetProps) {
         }
     }, [errorFromAI, activeBotMessageId, messages]);
 
-
-    console.log(isSendingUserMessage, isGeneratingResponse);
-
     return (
         <div
             className={`fixed bottom-0 right-4 flex flex-col bg-white border border-b-0 border-gray-300 rounded-t-lg transition-all duration-300 ease-in-out ${isCollapsed ? 'h-[52px]' : 'h-9/10'} min-h-[52px]`}

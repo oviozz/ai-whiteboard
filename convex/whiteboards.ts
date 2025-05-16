@@ -109,12 +109,6 @@ export const deleteWhiteboard = mutation({
 
         await Promise.all([
             ...itemsToDelete.map(item => ctx.db.delete(item._id)),
-
-            ...elements_items.map(element => {
-                return element.element.type === "image"
-                    ? ctx.storage.delete(element.element.storageId)
-                    : Promise.resolve();
-            })
         ]);
 
         await ctx.db.delete(whiteboardID);
