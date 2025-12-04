@@ -1,6 +1,6 @@
 /**
  * AgentHelpers
- *
+ * 
  * This class handles transformations that happen throughout a request.
  * It contains helpers for transforming prompt parts before sending to the model,
  * as well as transforming incoming actions from the model.
@@ -29,13 +29,13 @@ export class AgentHelpers {
 
   /** The editor this instance is for */
   editor: Editor;
-
+  
   /** The offset from the chat origin */
   offset: VecModel = { x: 0, y: 0 };
-
+  
   /** Map of shape IDs that have been transformed */
   shapeIdMap = new Map<string, string>();
-
+  
   /** Map of rounding diffs for restoring original values */
   roundingDiffMap = new Map<string, number>();
 
@@ -43,10 +43,10 @@ export class AgentHelpers {
     this.agent = agent;
     this.editor = agent.editor;
     const origin = agent.$chatOrigin.get();
-    this.offset = {
+      this.offset = {
       x: -origin.x,
       y: -origin.y,
-    };
+      };
   }
 
   // ============================================
@@ -538,7 +538,7 @@ export class AgentHelpers {
   }
 }
 
-/**
+  /**
  * Create an AgentHelpers instance
  */
 export function createAgentHelpers(agent: TldrawAgent): AgentHelpers {

@@ -260,7 +260,7 @@ export default function TldrawCanvas({ whiteboardId }: TldrawCanvasProps) {
   return (
     <TldrawEditor 
       store={storeWithStatus as TLStoreWithStatus & { status: 'synced-remote' }} 
-      onMount={handleMount}
+      onMount={handleMount} 
       agent={agent}
     />
   )

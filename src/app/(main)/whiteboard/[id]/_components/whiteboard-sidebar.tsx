@@ -1,6 +1,6 @@
-"use client"
+"use client";
 
-import { useState, useMemo, useCallback, memo, useEffect } from "react"
+import { useState, useMemo, useCallback, memo, useEffect } from "react";
 import {
   MousePointer,
   Pen,
@@ -17,22 +17,22 @@ import {
   Undo2,
   Redo2,
   Palette,
-} from "lucide-react"
-import { useMutation } from "convex/react"
-import { api } from "../../../../../../convex/_generated/api"
-import { Id } from "../../../../../../convex/_generated/dataModel"
-import { toast } from "sonner"
-import { cn } from "@/lib/utils"
-import { useTldrawEditor } from "@/contexts/tldraw-editor-context"
-import { clearWhiteboard } from "@/lib/tldraw-actions"
+} from "lucide-react";
+import { useMutation } from "convex/react";
+import { api } from "../../../../../../convex/_generated/api";
+import { Id } from "../../../../../../convex/_generated/dataModel";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import { useTldrawEditor } from "@/contexts/tldraw-editor-context";
+import { clearWhiteboard } from "@/lib/tldraw-actions";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@/components/ui/popover"
+} from "@/components/ui/popover";
 
 interface WhiteboardSidebarProps {
-  whiteboardID: Id<"whiteboards">
+  whiteboardID: Id<"whiteboards">;
 }
 
 const SidebarButton = memo(
@@ -45,23 +45,23 @@ const SidebarButton = memo(
     className,
     disabled,
   }: {
-    action?: () => void
-    icon: React.ElementType
-    label: string
-    isActive?: boolean
-    isCollapsed?: boolean
-    className?: string
-    disabled?: boolean
+    action?: () => void;
+    icon: React.ElementType;
+    label: string;
+    isActive?: boolean;
+    isCollapsed?: boolean;
+    className?: string;
+    disabled?: boolean;
   }) => {
     const handleClick = useCallback(
       (e: React.MouseEvent) => {
-        e.preventDefault()
+        e.preventDefault();
         if (!disabled) {
-          action?.()
+          action?.();
         }
       },
       [action, disabled]
-    )
+    );
 
     return (
       <button
@@ -81,7 +81,9 @@ const SidebarButton = memo(
         title={isCollapsed ? label : undefined}
         aria-label={label}
       >
-        <Icon className={`w-5 h-5 flex-shrink-0 ${!isCollapsed ? "mr-3" : ""}`} />
+        <Icon
+          className={`w-5 h-5 flex-shrink-0 ${!isCollapsed ? "mr-3" : ""}`}
+        />
         <span
           className={cn(
             "text-sm font-medium whitespace-nowrap overflow-hidden transition-all duration-300",
@@ -91,10 +93,10 @@ const SidebarButton = memo(
           {label}
         </span>
       </button>
-    )
+    );
   }
-)
-SidebarButton.displayName = "SidebarButton"
+);
+SidebarButton.displayName = "SidebarButton";
 
 // Color options matching tldraw's palette (circular style)
 const COLORS = [
@@ -110,180 +112,261 @@ const COLORS = [
   { name: "light-green", value: "#a5d68f" },
   { name: "light-red", value: "#f3a3a3" },
   { name: "red", value: "#e03131" },
-]
+];
 
 // Fill style icons (SVG paths for visual representation)
 const FillIcons = {
   none: (
     <svg viewBox="0 0 24 24" className="w-6 h-6">
-      <rect x="4" y="4" width="16" height="16" rx="2" fill="none" stroke="currentColor" strokeWidth="2" />
+      <rect
+        x="4"
+        y="4"
+        width="16"
+        height="16"
+        rx="2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+      />
     </svg>
   ),
   semi: (
     <svg viewBox="0 0 24 24" className="w-6 h-6">
-      <rect x="4" y="4" width="16" height="16" rx="2" fill="none" stroke="currentColor" strokeWidth="2" />
-      <rect x="4" y="4" width="16" height="16" rx="2" fill="currentColor" opacity="0.3" />
+      <rect
+        x="4"
+        y="4"
+        width="16"
+        height="16"
+        rx="2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+      />
+      <rect
+        x="4"
+        y="4"
+        width="16"
+        height="16"
+        rx="2"
+        fill="currentColor"
+        opacity="0.3"
+      />
     </svg>
   ),
   solid: (
     <svg viewBox="0 0 24 24" className="w-6 h-6">
-      <rect x="4" y="4" width="16" height="16" rx="2" fill="currentColor" stroke="currentColor" strokeWidth="2" />
+      <rect
+        x="4"
+        y="4"
+        width="16"
+        height="16"
+        rx="2"
+        fill="currentColor"
+        stroke="currentColor"
+        strokeWidth="2"
+      />
     </svg>
   ),
   pattern: (
     <svg viewBox="0 0 24 24" className="w-6 h-6">
-      <rect x="4" y="4" width="16" height="16" rx="2" fill="none" stroke="currentColor" strokeWidth="2" />
-      <path d="M4 8h16M4 12h16M4 16h16" stroke="currentColor" strokeWidth="1" opacity="0.5" />
+      <rect
+        x="4"
+        y="4"
+        width="16"
+        height="16"
+        rx="2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+      />
+      <path
+        d="M4 8h16M4 12h16M4 16h16"
+        stroke="currentColor"
+        strokeWidth="1"
+        opacity="0.5"
+      />
     </svg>
   ),
-}
+};
 
 // Dash style icons
 const DashIcons = {
   draw: (
     <svg viewBox="0 0 24 24" className="w-6 h-6">
-      <path d="M4 12 Q8 8 12 12 T20 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+      <path
+        d="M4 12 Q8 8 12 12 T20 12"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+      />
     </svg>
   ),
   solid: (
     <svg viewBox="0 0 24 24" className="w-6 h-6">
-      <line x1="4" y1="12" x2="20" y2="12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+      <line
+        x1="4"
+        y1="12"
+        x2="20"
+        y2="12"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+      />
     </svg>
   ),
   dashed: (
     <svg viewBox="0 0 24 24" className="w-6 h-6">
-      <line x1="4" y1="12" x2="20" y2="12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeDasharray="4 3" />
+      <line
+        x1="4"
+        y1="12"
+        x2="20"
+        y2="12"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeDasharray="4 3"
+      />
     </svg>
   ),
   dotted: (
     <svg viewBox="0 0 24 24" className="w-6 h-6">
-      <line x1="4" y1="12" x2="20" y2="12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeDasharray="1 4" />
+      <line
+        x1="4"
+        y1="12"
+        x2="20"
+        y2="12"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeDasharray="1 4"
+      />
     </svg>
   ),
-}
+};
 
 // Size options
-const SIZES = ["s", "m", "l", "xl"] as const
+const SIZES = ["s", "m", "l", "xl"] as const;
 
 // Custom Style Panel that uses our editor context
 function StylePanelPopover({ collapsed }: { collapsed: boolean }) {
-  const { editor } = useTldrawEditor()
-  const [open, setOpen] = useState(false)
-  const [currentColor, setCurrentColor] = useState("black")
-  const [currentFill, setCurrentFill] = useState("none")
-  const [currentDash, setCurrentDash] = useState("draw")
-  const [currentSize, setCurrentSize] = useState<typeof SIZES[number]>("m")
-  const [opacity, setOpacity] = useState(100)
+  const { editor } = useTldrawEditor();
+  const [open, setOpen] = useState(false);
+  const [currentColor, setCurrentColor] = useState("black");
+  const [currentFill, setCurrentFill] = useState("none");
+  const [currentDash, setCurrentDash] = useState("draw");
+  const [currentSize, setCurrentSize] = useState<(typeof SIZES)[number]>("m");
+  const [opacity, setOpacity] = useState(100);
 
   // Sync state when editor becomes available
   useEffect(() => {
-    if (!editor) return
-  }, [editor])
+    if (!editor) return;
+  }, [editor]);
 
   const handleColorChange = useCallback(
     (colorName: string) => {
-      setCurrentColor(colorName)
+      setCurrentColor(colorName);
       if (editor) {
         editor.setStyleForNextShapes(
           // @ts-expect-error - tldraw style types
           { id: "tldraw:color", type: "enum" },
           colorName
-        )
-        const selectedIds = editor.getSelectedShapeIds()
+        );
+        const selectedIds = editor.getSelectedShapeIds();
         if (selectedIds.length > 0) {
           editor.setStyleForSelectedShapes(
             // @ts-expect-error - tldraw style types
             { id: "tldraw:color", type: "enum" },
             colorName
-          )
+          );
         }
       }
     },
     [editor]
-  )
+  );
 
   const handleFillChange = useCallback(
     (fillName: string) => {
-      setCurrentFill(fillName)
+      setCurrentFill(fillName);
       if (editor) {
         editor.setStyleForNextShapes(
           // @ts-expect-error - tldraw style types
           { id: "tldraw:fill", type: "enum" },
           fillName
-        )
-        const selectedIds = editor.getSelectedShapeIds()
+        );
+        const selectedIds = editor.getSelectedShapeIds();
         if (selectedIds.length > 0) {
           editor.setStyleForSelectedShapes(
             // @ts-expect-error - tldraw style types
             { id: "tldraw:fill", type: "enum" },
             fillName
-          )
+          );
         }
       }
     },
     [editor]
-  )
+  );
 
   const handleDashChange = useCallback(
     (dashName: string) => {
-      setCurrentDash(dashName)
+      setCurrentDash(dashName);
       if (editor) {
         editor.setStyleForNextShapes(
           // @ts-expect-error - tldraw style types
           { id: "tldraw:dash", type: "enum" },
           dashName
-        )
-        const selectedIds = editor.getSelectedShapeIds()
+        );
+        const selectedIds = editor.getSelectedShapeIds();
         if (selectedIds.length > 0) {
           editor.setStyleForSelectedShapes(
             // @ts-expect-error - tldraw style types
             { id: "tldraw:dash", type: "enum" },
             dashName
-          )
+          );
         }
       }
     },
     [editor]
-  )
+  );
 
   const handleSizeChange = useCallback(
-    (sizeName: typeof SIZES[number]) => {
-      setCurrentSize(sizeName)
+    (sizeName: (typeof SIZES)[number]) => {
+      setCurrentSize(sizeName);
       if (editor) {
         editor.setStyleForNextShapes(
           // @ts-expect-error - tldraw style types
           { id: "tldraw:size", type: "enum" },
           sizeName
-        )
-        const selectedIds = editor.getSelectedShapeIds()
+        );
+        const selectedIds = editor.getSelectedShapeIds();
         if (selectedIds.length > 0) {
           editor.setStyleForSelectedShapes(
             // @ts-expect-error - tldraw style types
             { id: "tldraw:size", type: "enum" },
             sizeName
-          )
+          );
         }
       }
     },
     [editor]
-  )
+  );
 
   const handleOpacityChange = useCallback(
     (value: number[]) => {
-      const newOpacity = value[0]
-      setOpacity(newOpacity)
+      const newOpacity = value[0];
+      setOpacity(newOpacity);
       if (editor) {
-        editor.setOpacityForNextShapes(newOpacity / 100)
-        const selectedIds = editor.getSelectedShapeIds()
+        editor.setOpacityForNextShapes(newOpacity / 100);
+        const selectedIds = editor.getSelectedShapeIds();
         if (selectedIds.length > 0) {
-          editor.setOpacityForSelectedShapes(newOpacity / 100)
+          editor.setOpacityForSelectedShapes(newOpacity / 100);
         }
       }
     },
     [editor]
-  )
+  );
 
-  const currentColorObj = COLORS.find((c) => c.name === currentColor)
+  const currentColorObj = COLORS.find((c) => c.name === currentColor);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -359,42 +442,46 @@ function StylePanelPopover({ collapsed }: { collapsed: boolean }) {
         {/* Fill Section */}
         <div className="border-t border-slate-100 p-3 bg-white">
           <div className="grid grid-cols-4 gap-1">
-            {(Object.keys(FillIcons) as Array<keyof typeof FillIcons>).map((fill) => (
-              <button
-                key={fill}
-                onClick={() => handleFillChange(fill)}
-                className={cn(
-                  "p-2 rounded-lg transition-colors text-slate-500",
-                  currentFill === fill
-                    ? "bg-slate-100 text-slate-700"
-                    : "hover:bg-slate-50"
-                )}
-                title={fill}
-              >
-                {FillIcons[fill]}
-              </button>
-            ))}
+            {(Object.keys(FillIcons) as Array<keyof typeof FillIcons>).map(
+              (fill) => (
+                <button
+                  key={fill}
+                  onClick={() => handleFillChange(fill)}
+                  className={cn(
+                    "p-2 rounded-lg transition-colors text-slate-500",
+                    currentFill === fill
+                      ? "bg-slate-100 text-slate-700"
+                      : "hover:bg-slate-50"
+                  )}
+                  title={fill}
+                >
+                  {FillIcons[fill]}
+                </button>
+              )
+            )}
           </div>
         </div>
 
         {/* Dash Section */}
         <div className="border-t border-slate-100 p-3 bg-white">
           <div className="grid grid-cols-4 gap-1">
-            {(Object.keys(DashIcons) as Array<keyof typeof DashIcons>).map((dash) => (
-              <button
-                key={dash}
-                onClick={() => handleDashChange(dash)}
-                className={cn(
-                  "p-2 rounded-lg transition-colors text-slate-500",
-                  currentDash === dash
-                    ? "bg-slate-100 text-slate-700"
-                    : "hover:bg-slate-50"
-                )}
-                title={dash}
-              >
-                {DashIcons[dash]}
-              </button>
-            ))}
+            {(Object.keys(DashIcons) as Array<keyof typeof DashIcons>).map(
+              (dash) => (
+                <button
+                  key={dash}
+                  onClick={() => handleDashChange(dash)}
+                  className={cn(
+                    "p-2 rounded-lg transition-colors text-slate-500",
+                    currentDash === dash
+                      ? "bg-slate-100 text-slate-700"
+                      : "hover:bg-slate-50"
+                  )}
+                  title={dash}
+                >
+                  {DashIcons[dash]}
+                </button>
+              )
+            )}
           </div>
         </div>
 
@@ -419,7 +506,7 @@ function StylePanelPopover({ collapsed }: { collapsed: boolean }) {
         </div>
       </PopoverContent>
     </Popover>
-  )
+  );
 }
 
 // Map our tool names to tldraw tool names
@@ -433,110 +520,132 @@ const TOOL_MAP: Record<string, string> = {
   ellipse: "geo",
   arrow: "arrow",
   note: "note",
-}
+};
 
-export default function WhiteboardSidebar({ whiteboardID }: WhiteboardSidebarProps) {
-  const { editor } = useTldrawEditor()
-  const clearTldrawWhiteboard = useMutation(api.whiteboardActions.clearTldrawWhiteboard)
-  
-  const [collapsed, setCollapsed] = useState(false)
-  const [currentToolId, setCurrentToolId] = useState<string>("select")
+export default function WhiteboardSidebar({
+  whiteboardID,
+}: WhiteboardSidebarProps) {
+  const { editor } = useTldrawEditor();
+  const clearTldrawWhiteboard = useMutation(
+    api.whiteboardActions.clearTldrawWhiteboard
+  );
+
+  const [collapsed, setCollapsed] = useState(false);
+  const [currentToolId, setCurrentToolId] = useState<string>("select");
 
   // Listen for tool changes from tldraw editor
   useEffect(() => {
-    if (!editor) return
+    if (!editor) return;
 
     // Set initial tool
-    setCurrentToolId(editor.getCurrentToolId())
+    setCurrentToolId(editor.getCurrentToolId());
 
     // Subscribe to tool changes
     const handleToolChange = () => {
-      setCurrentToolId(editor.getCurrentToolId())
-    }
+      setCurrentToolId(editor.getCurrentToolId());
+    };
 
     // Listen to the editor's store for changes
-    const unsubscribe = editor.store.listen(handleToolChange, { scope: "session" })
+    const unsubscribe = editor.store.listen(handleToolChange, {
+      scope: "session",
+    });
 
     return () => {
-      unsubscribe()
-    }
-  }, [editor])
+      unsubscribe();
+    };
+  }, [editor]);
 
   const selectTool = useCallback(
     (toolName: string, geoShape?: string) => {
-      if (!editor) return
+      if (!editor) return;
 
-      const tldrawTool = TOOL_MAP[toolName] || toolName
+      const tldrawTool = TOOL_MAP[toolName] || toolName;
 
       if (tldrawTool === "geo" && geoShape) {
-        editor.setCurrentTool("geo")
-        editor.updateInstanceState({
-          stylesForNextShape: {
-            ...editor.getInstanceState().stylesForNextShape,
-          },
-        })
+        editor.setCurrentTool("geo");
+        // Set the geo style for the next shape using the style prop directly
         editor.setStyleForNextShapes(
-          editor.getStyleForNextShape(
-            // @ts-expect-error - tldraw internal API
-            editor.store.schema.types.shape.props.geo
-          ),
+          // @ts-expect-error - tldraw style type
+          { id: "tldraw:geo", type: "enum" },
           geoShape
-        )
+        );
       } else {
-        editor.setCurrentTool(tldrawTool)
+        editor.setCurrentTool(tldrawTool);
       }
     },
     [editor]
-  )
+  );
 
   const handleClear = useCallback(async () => {
     if (!editor) {
-      toast.error("Editor not ready")
-      return
+      toast.error("Editor not ready");
+      return;
     }
 
-    clearWhiteboard(editor)
+    clearWhiteboard(editor);
 
-    const result = await clearTldrawWhiteboard({ whiteboardID })
+    const result = await clearTldrawWhiteboard({ whiteboardID });
     if (result.success) {
-      toast.success(result.message)
+      toast.success(result.message);
     } else {
-      toast.error(result.message || "Failed to clear whiteboard")
+      toast.error(result.message || "Failed to clear whiteboard");
     }
-  }, [editor, clearTldrawWhiteboard, whiteboardID])
+  }, [editor, clearTldrawWhiteboard, whiteboardID]);
 
   const handleUndo = useCallback(() => {
-    if (!editor) return
-    editor.undo()
-  }, [editor])
+    if (!editor) return;
+    editor.undo();
+  }, [editor]);
 
   const handleRedo = useCallback(() => {
-    if (!editor) return
-    editor.redo()
-  }, [editor])
+    if (!editor) return;
+    editor.redo();
+  }, [editor]);
 
   const tools = useMemo(
     () => [
-      { name: "select", icon: MousePointer, label: "Select", tldrawTool: "select" },
+      {
+        name: "select",
+        icon: MousePointer,
+        label: "Select",
+        tldrawTool: "select",
+      },
       { name: "hand", icon: Hand, label: "Pan", tldrawTool: "hand" },
       { name: "draw", icon: Pen, label: "Draw", tldrawTool: "draw" },
       { name: "eraser", icon: Eraser, label: "Eraser", tldrawTool: "eraser" },
       { name: "text", icon: Type, label: "Text", tldrawTool: "text" },
-      { name: "note", icon: StickyNote, label: "Sticky Note", tldrawTool: "note" },
-      { name: "rectangle", icon: Square, label: "Rectangle", tldrawTool: "geo", geoShape: "rectangle" },
-      { name: "ellipse", icon: Circle, label: "Ellipse", tldrawTool: "geo", geoShape: "ellipse" },
+      {
+        name: "note",
+        icon: StickyNote,
+        label: "Sticky Note",
+        tldrawTool: "note",
+      },
+      {
+        name: "rectangle",
+        icon: Square,
+        label: "Rectangle",
+        tldrawTool: "geo",
+        geoShape: "rectangle",
+      },
+      {
+        name: "ellipse",
+        icon: Circle,
+        label: "Ellipse",
+        tldrawTool: "geo",
+        geoShape: "ellipse",
+      },
       { name: "arrow", icon: ArrowRight, label: "Arrow", tldrawTool: "arrow" },
     ],
     []
-  )
+  );
 
   const isToolActive = useCallback(
     (toolName: string) => {
-      const mappedTool = TOOL_MAP[toolName] || toolName
-      return currentToolId === mappedTool
+      const mappedTool = TOOL_MAP[toolName] || toolName;
+      return currentToolId === mappedTool;
     },
     [currentToolId]
-  )
+  );
 
   return (
     <div
@@ -647,5 +756,5 @@ export default function WhiteboardSidebar({ whiteboardID }: WhiteboardSidebarPro
         />
       </div>
     </div>
-  )
+  );
 }

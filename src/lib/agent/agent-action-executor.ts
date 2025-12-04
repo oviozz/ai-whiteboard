@@ -141,12 +141,12 @@ const GEO_SHAPE_TYPES = new Set([
  * Ensure a value is a valid number, converting from string if needed
  */
 function ensureValueIsNumber(value: unknown): number | null {
-  if (typeof value === "number" && !isNaN(value)) {
+  if (typeof value === "number" && Number.isFinite(value)) {
     return value;
   }
   if (typeof value === "string") {
     const parsed = parseFloat(value);
-    if (!isNaN(parsed)) {
+    if (Number.isFinite(parsed)) {
       return parsed;
     }
   }
@@ -261,6 +261,250 @@ function calculateArrowBindingAnchor(
   )
     ? clampedNormalizedAnchor
     : { x: 0.5, y: 0.5 }; // Fall back to center
+}
+
+// ============================================
+// Collision Detection Utilities
+// ============================================
+
+interface BoundingBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * Check if two bounding boxes overlap
+ */
+function boxesOverlap(a: BoundingBox, b: BoundingBox, padding = 10): boolean {
+  return !(
+    a.x + a.w + padding < b.x ||
+    b.x + b.w + padding < a.x ||
+    a.y + a.h + padding < b.y ||
+    b.y + b.h + padding < a.y
+  );
+}
+
+// Track recently created shapes in the current session to handle batch creates
+const recentlyCreatedBoxes: BoundingBox[] = [];
+let lastCreationTime = 0;
+
+/**
+ * Clear recent creation tracking if enough time has passed
+ */
+function clearStaleRecentCreations() {
+  const now = Date.now();
+  // Clear if more than 2 seconds since last creation (new prompt likely)
+  if (now - lastCreationTime > 2000) {
+    recentlyCreatedBoxes.length = 0;
+  }
+  lastCreationTime = now;
+}
+
+/**
+ * Sanitize a number to ensure it's finite. Returns fallback if not.
+ */
+function safeNumber(
+  value: number | undefined | null,
+  fallback: number
+): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  return fallback;
+}
+
+/**
+ * Find a non-overlapping position for a shape
+ */
+function findNonOverlappingPosition(
+  editor: Editor,
+  desiredX: number,
+  desiredY: number,
+  width: number,
+  height: number,
+  spacing = 30
+): { x: number; y: number } {
+  clearStaleRecentCreations();
+
+  // Get viewport center as ultimate fallback
+  const viewportBounds = editor.getViewportPageBounds();
+  const fallbackX = viewportBounds.x + viewportBounds.w / 2;
+  const fallbackY = viewportBounds.y + viewportBounds.h / 2;
+
+  // CRITICAL: Sanitize ALL inputs to ensure finite values
+  const safeDesiredX = safeNumber(desiredX, fallbackX);
+  const safeDesiredY = safeNumber(desiredY, fallbackY);
+  const safeWidth = safeNumber(width, 100);
+  const safeHeight = safeNumber(height, 50);
+
+  const existingShapes = editor.getCurrentPageShapes();
+
+  // Get bounding boxes of all existing shapes AND recently created shapes
+  // Only include boxes with finite values
+  const existingBoxes: BoundingBox[] = [];
+
+  for (const box of recentlyCreatedBoxes) {
+    if (
+      Number.isFinite(box.x) &&
+      Number.isFinite(box.y) &&
+      Number.isFinite(box.w) &&
+      Number.isFinite(box.h)
+    ) {
+      existingBoxes.push(box);
+    }
+  }
+
+  for (const shape of existingShapes) {
+    const bounds = editor.getShapePageBounds(shape);
+    if (
+      bounds &&
+      Number.isFinite(bounds.x) &&
+      Number.isFinite(bounds.y) &&
+      Number.isFinite(bounds.w) &&
+      Number.isFinite(bounds.h)
+    ) {
+      existingBoxes.push({
+        x: bounds.x,
+        y: bounds.y,
+        w: bounds.w,
+        h: bounds.h,
+      });
+    }
+  }
+
+  if (existingBoxes.length === 0) {
+    // Track this position for future creations
+    recentlyCreatedBoxes.push({
+      x: safeDesiredX,
+      y: safeDesiredY,
+      w: safeWidth,
+      h: safeHeight,
+    });
+    return { x: safeDesiredX, y: safeDesiredY };
+  }
+
+  // Check if desired position overlaps
+  const newBox: BoundingBox = {
+    x: safeDesiredX,
+    y: safeDesiredY,
+    w: safeWidth,
+    h: safeHeight,
+  };
+  const hasOverlap = existingBoxes.some((box) =>
+    boxesOverlap(newBox, box, spacing)
+  );
+
+  if (!hasOverlap) {
+    // Track this position for future creations
+    recentlyCreatedBoxes.push(newBox);
+    return { x: safeDesiredX, y: safeDesiredY };
+  }
+
+  // Find safe Y position below all content
+  let maxBottom = safeDesiredY; // Start with safe value, not -Infinity
+  for (const box of existingBoxes) {
+    const bottom = box.y + box.h;
+    if (Number.isFinite(bottom) && bottom > maxBottom) {
+      maxBottom = bottom;
+    }
+  }
+
+  // Also check if there's space to the right at the same Y
+  let rightmostAtY = safeDesiredX; // Start with safe value, not -Infinity
+  for (const box of existingBoxes) {
+    // Check if this box is at a similar Y position
+    if (Math.abs(box.y - safeDesiredY) < safeHeight + spacing) {
+      const right = box.x + box.w;
+      if (Number.isFinite(right) && right > rightmostAtY) {
+        rightmostAtY = right;
+      }
+    }
+  }
+
+  // Calculate safe positions
+  const goDownY = maxBottom + spacing;
+  const goRightX = rightmostAtY + spacing;
+
+  // Find the leftmost X position to align with existing content
+  let minX = safeDesiredX;
+  for (const box of existingBoxes) {
+    if (Number.isFinite(box.x) && box.x < minX) {
+      minX = box.x;
+    }
+  }
+
+  // Prefer going right if it keeps us close to the original Y
+  // and within a reasonable horizontal distance
+  const maxX = viewportBounds.x + viewportBounds.w - safeWidth - 50;
+
+  if (goRightX < maxX) {
+    // Check if going right would overlap with anything
+    const rightBox: BoundingBox = {
+      x: goRightX,
+      y: safeDesiredY,
+      w: safeWidth,
+      h: safeHeight,
+    };
+    const rightOverlap = existingBoxes.some((box) =>
+      boxesOverlap(rightBox, box, spacing)
+    );
+    if (!rightOverlap) {
+      // Track this position for future creations
+      recentlyCreatedBoxes.push(rightBox);
+      return { x: goRightX, y: safeDesiredY };
+    }
+  }
+
+  // Check the position below existing content
+  const downBox: BoundingBox = {
+    x: minX,
+    y: goDownY,
+    w: safeWidth,
+    h: safeHeight,
+  };
+  const downOverlap = existingBoxes.some((box) =>
+    boxesOverlap(downBox, box, spacing)
+  );
+
+  if (!downOverlap) {
+    // Track this position for future creations
+    recentlyCreatedBoxes.push(downBox);
+    return { x: minX, y: goDownY };
+  }
+
+  // Fallback: try multiple positions
+  const attempts = [
+    { x: minX, y: goDownY },
+    { x: safeDesiredX, y: goDownY },
+    { x: safeDesiredX, y: goDownY + spacing },
+    { x: minX, y: goDownY + spacing * 2 },
+  ];
+
+  for (const pos of attempts) {
+    const testBox: BoundingBox = {
+      x: pos.x,
+      y: pos.y,
+      w: safeWidth,
+      h: safeHeight,
+    };
+    if (!existingBoxes.some((box) => boxesOverlap(testBox, box, spacing))) {
+      // Track this position for future creations
+      recentlyCreatedBoxes.push(testBox);
+      return pos;
+    }
+  }
+
+  // Ultimate fallback: go way down
+  const finalPos = { x: minX, y: goDownY + spacing * 3 };
+  recentlyCreatedBoxes.push({
+    x: finalPos.x,
+    y: finalPos.y,
+    w: safeWidth,
+    h: safeHeight,
+  });
+  return finalPos;
 }
 
 // ============================================
@@ -588,15 +832,31 @@ export class AgentActionExecutor {
     // Handle geo shapes (use set to check all types)
     if (GEO_SHAPE_TYPES.has(shape._type)) {
       const geoShape = shape as SimpleGeoShape;
+
+      // Sanitize input values - AI may send invalid coordinates
+      const inputX = safeNumber(geoShape.x, 0);
+      const inputY = safeNumber(geoShape.y, 0);
+      const width = safeNumber(geoShape.w, 100);
+      const height = safeNumber(geoShape.h, 100);
+
+      // Find non-overlapping position
+      const safePos = findNonOverlappingPosition(
+        this.editor,
+        inputX,
+        inputY,
+        width,
+        height
+      );
+
       this.editor.createShape({
         id: shapeId,
         type: "geo",
-        x: geoShape.x,
-        y: geoShape.y,
+        x: safePos.x,
+        y: safePos.y,
         props: {
           geo: geoTypeMap[geoShape._type] || "rectangle",
-          w: geoShape.w || 100,
-          h: geoShape.h || 100,
+          w: width,
+          h: height,
           color: colorMap[geoShape.color] || "black",
           fill: geoShape.fill || "none",
           richText: toRichText(geoShape.text || ""),
@@ -622,10 +882,17 @@ export class AgentActionExecutor {
         const textAlign = textShape.textAlign || "start";
         const effectiveFontSize = FONT_SIZES[textSize] * scale;
 
+        // Sanitize input coordinates
+        const inputX = safeNumber(textShape.x, 0);
+        const inputY = safeNumber(textShape.y, 0);
+
         // Set max width for text to wrap nicely (500px default, or use provided width)
         // This prevents long text from stretching across the entire canvas
         const MAX_TEXT_WIDTH = 500;
-        const targetWidth = textShape.w ?? textShape.width ?? MAX_TEXT_WIDTH;
+        const targetWidth = safeNumber(
+          textShape.w ?? textShape.width,
+          MAX_TEXT_WIDTH
+        );
 
         // Measure text to get proper dimensions with max width for wrapping
         const measurement = this.editor.textMeasure.measureText(text, {
@@ -646,27 +913,36 @@ export class AgentActionExecutor {
           isShortText;
 
         // Calculate position based on text alignment
-        let correctedX = textShape.x;
-        const correctedY = textShape.y - measurement.h / 2;
+        let correctedX = inputX;
+        let correctedY = inputY - measurement.h / 2;
 
         switch (textAlign) {
           case "middle":
-            correctedX = textShape.x - finalWidth / 2;
+            correctedX = inputX - finalWidth / 2;
             break;
           case "end":
-            correctedX = textShape.x - finalWidth;
+            correctedX = inputX - finalWidth;
             break;
           case "start":
           default:
-            correctedX = textShape.x;
+            correctedX = inputX;
             break;
         }
+
+        // Find non-overlapping position for text
+        const safePos = findNonOverlappingPosition(
+          this.editor,
+          correctedX,
+          correctedY,
+          finalWidth,
+          safeNumber(measurement.h, 50)
+        );
 
         this.editor.createShape({
           id: shapeId,
           type: "text",
-          x: correctedX,
-          y: correctedY,
+          x: safePos.x,
+          y: safePos.y,
           props: {
             richText: toRichText(text),
             color: colorMap[textShape.color] || "black",
@@ -689,11 +965,34 @@ export class AgentActionExecutor {
         const noteShape = shape as SimpleNoteShape;
         // Default to "l" for better visibility
         const noteSize = noteShape.size || "l";
+        // Estimate note size (notes have fixed dimensions based on size)
+        const noteSizeMap: Record<string, number> = {
+          s: 150,
+          m: 200,
+          l: 250,
+          xl: 300,
+        };
+        const noteWidth = noteSizeMap[noteSize] || 200;
+        const noteHeight = noteWidth; // Notes are roughly square
+
+        // Sanitize input coordinates
+        const inputX = safeNumber(noteShape.x, 0);
+        const inputY = safeNumber(noteShape.y, 0);
+
+        // Find non-overlapping position for note
+        const safePos = findNonOverlappingPosition(
+          this.editor,
+          inputX,
+          inputY,
+          noteWidth,
+          noteHeight
+        );
+
         this.editor.createShape({
           id: shapeId,
           type: "note",
-          x: noteShape.x,
-          y: noteShape.y,
+          x: safePos.x,
+          y: safePos.y,
           props: {
             richText: toRichText(noteShape.text || ""),
             color: colorMap[noteShape.color] || "yellow",
@@ -884,8 +1183,11 @@ export class AgentActionExecutor {
     const isClosed = ensureValueIsBoolean(action.closed) ?? false;
     const fillValue = ensureValueIsFill(action.fill) ?? "none";
 
-    const minX = Math.min(...validPoints.map((p) => p.x));
-    const minY = Math.min(...validPoints.map((p) => p.y));
+    // Calculate bounds with safety fallbacks
+    const xValues = validPoints.map((p) => p.x).filter(Number.isFinite);
+    const yValues = validPoints.map((p) => p.y).filter(Number.isFinite);
+    const minX = xValues.length > 0 ? Math.min(...xValues) : 0;
+    const minY = yValues.length > 0 ? Math.min(...yValues) : 0;
 
     // Interpolate points for smoother lines using Vec utilities
     const interpolatedPoints: { x: number; y: number }[] = [];
