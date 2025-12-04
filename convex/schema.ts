@@ -43,6 +43,14 @@ export default defineSchema({
         firstName: v.string(),
         lastName: v.string(),
         clerkUserID: v.string(),
+        // AI Tutor Preferences
+        tutorPreferences: v.optional(v.object({
+            proactiveHintsEnabled: v.boolean(),
+            hintFrequency: v.string(), // 'low' | 'medium' | 'high'
+            preferredHintStyle: v.string(), // 'quick' | 'detailed' | 'auto'
+            showResourceSuggestions: v.boolean(),
+            idleThresholdMs: v.number(),
+        })),
     }).index("byClerkUserID", ["clerkUserID"]),
     whiteboards: defineTable({
         userID: v.string(),
@@ -71,5 +79,46 @@ export default defineSchema({
         updatedAt: v.optional(v.number()),
     })
         .index("byWhiteboardIDCreatedAt", ["whiteboardID", "createdAt"]),
+
+    // Document uploads for study materials
+    whiteboardDocuments: defineTable({
+        whiteboardID: v.id("whiteboards"),
+        storageId: v.id("_storage"),
+        filename: v.string(),
+        fileType: v.string(), // mime type
+        fileSize: v.number(), // in bytes
+        extractedContent: v.optional(v.string()), // JSON stringified extracted text/content
+        extractedProblems: v.optional(v.array(v.object({
+            id: v.string(),
+            text: v.string(),
+            pageNumber: v.optional(v.number()),
+            difficulty: v.optional(v.string()), // 'easy' | 'medium' | 'hard'
+            addedToBoard: v.boolean(),
+        }))),
+        processingStatus: v.string(), // 'pending' | 'processing' | 'complete' | 'error'
+        processingError: v.optional(v.string()),
+        uploadedAt: v.number(),
+    })
+        .index("byWhiteboardID", ["whiteboardID"]),
+
+    // AI Tutor state for proactive hints
+    whiteboardTutorState: defineTable({
+        whiteboardID: v.id("whiteboards"),
+        lastAnalysis: v.number(), // timestamp
+        analysisCount: v.number(), // how many times analyzed
+        currentStatus: v.string(), // 'on_track' | 'needs_hint' | 'stuck' | 'idle'
+        pendingHint: v.optional(v.object({
+            type: v.string(), // 'quick' | 'detailed'
+            content: v.string(),
+            relatedArea: v.optional(v.object({ 
+                x: v.number(), 
+                y: v.number() 
+            })),
+            dismissedAt: v.optional(v.number()),
+        })),
+        hintsShown: v.number(), // count of hints shown this session
+        lastActivity: v.number(), // last user interaction timestamp
+    })
+        .index("byWhiteboardID", ["whiteboardID"]),
 });
 

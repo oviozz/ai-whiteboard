@@ -23,6 +23,7 @@ import { Loader } from "lucide-react" // Adjust path
 import TextEditPopover from "@/components/text-edit-popover";
 import MarkdownRenderer from "@/components/markdown-renderer";
 import SolveItAllProvider from "@/components/providers/solve-it-all-provider";
+import ProactiveTutorProvider from "@/components/ai-tutor/proactive-tutor-provider";
 
 // --- Constants ---
 const MIN_ZOOM = 0.1
@@ -1694,7 +1695,7 @@ export default function WhiteboardClient({ whiteboardId }: { whiteboardId?: Id<"
                 />
                 <div className="flex flex-1">
                     <div
-                        className="flex-1 relative bg-white dark:bg-slate-800 shadow-inner overflow-hidden"
+                        className="flex-1 relative bg-white dark:bg-slate-800 overflow-hidden"
                         style={{ touchAction: "none", cursor: cursorStyle }}
                         onDragOver={(e) => {
                             e.preventDefault()
@@ -1703,22 +1704,29 @@ export default function WhiteboardClient({ whiteboardId }: { whiteboardId?: Id<"
                         onDragLeave={() => canvasRef.current?.classList.remove("drag-over-active")}
                         onDrop={handleDrop}
                     >
-                        <SolveItAllProvider>
-                            <canvas
-                                ref={canvasRef}
-                                onMouseDown={handleMouseDown}
-                                onMouseMove={handleMouseMove}
-                                onMouseUp={handleMouseUp}
-                                onMouseLeave={handleMouseLeave}
-                                onTouchStart={handleTouchStart}
-                                onTouchMove={handleTouchMove}
-                                onTouchEnd={handleTouchEnd}
-                                onTouchCancel={handleTouchEnd}
-                                onWheel={handleWheel}
-                                onDoubleClick={handleDoubleClick}
-                                className="w-full h-full block"
-                            />
-                        </SolveItAllProvider>
+                        <ProactiveTutorProvider
+                            whiteboardID={whiteboardId as Id<"whiteboards">}
+                            canvasRef={canvasRef}
+                            panOffset={panOffset}
+                            zoomLevel={zoomLevel}
+                        >
+                            <SolveItAllProvider>
+                                <canvas
+                                    ref={canvasRef}
+                                    onMouseDown={handleMouseDown}
+                                    onMouseMove={handleMouseMove}
+                                    onMouseUp={handleMouseUp}
+                                    onMouseLeave={handleMouseLeave}
+                                    onTouchStart={handleTouchStart}
+                                    onTouchMove={handleTouchMove}
+                                    onTouchEnd={handleTouchEnd}
+                                    onTouchCancel={handleTouchEnd}
+                                    onWheel={handleWheel}
+                                    onDoubleClick={handleDoubleClick}
+                                    className="w-full h-full block"
+                                />
+                            </SolveItAllProvider>
+                        </ProactiveTutorProvider>
 
                         {/* Render all text elements as Markdown */}
                         <div ref={markdownContainerRef} className="absolute inset-0 pointer-events-none">

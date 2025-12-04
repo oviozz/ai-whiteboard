@@ -2,10 +2,9 @@ import {query, mutation, internalQuery, internalMutation, action} from "./_gener
 import {v} from "convex/values";
 import {elementData as elementDataSchema} from "./schema";
 import {internal} from "./_generated/api";
-import {getGoogleAIClient} from "../src/lib/gemini-client";
+import {getGatewayModel} from "../src/lib/gateway-client";
 import {CoreMessage, generateText, ImagePart, streamText, TextPart} from "ai";
 import {containsWhiteboardTrigger} from "../src/lib/utils";
-
 
 export const getWhiteboardContent = query({
     args: {whiteboardID: v.optional(v.id("whiteboards"))},
@@ -284,8 +283,6 @@ export const solveItAll = action({
 
 
         try {
-            const currentGoogleClient = getGoogleAIClient();
-
             const whiteboard = await ctx.runQuery(internal.whiteboards.getWhiteboardByID, {
                     whiteboardID
                 })
@@ -330,11 +327,12 @@ export const solveItAll = action({
         `;
 
 
+            // Pass the Convex storage URL directly - it's publicly accessible
             const userContent = [
                 { type: "text", text: "Solve this problem and give me the answers step by step" } as TextPart,
                 {
                     type: "image",
-                    image: image_url
+                    image: image_url!
                 } as ImagePart
             ];
 
@@ -350,7 +348,7 @@ export const solveItAll = action({
             ];
 
             const generateTextResult = await generateText({
-                model: currentGoogleClient('gemini-2.0-flash-exp', ),
+                model: getGatewayModel("google/gemini-2.0-flash"),
                 messages: messagesToAI,
             });
 

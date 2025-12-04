@@ -1,5 +1,4 @@
-
-import { getGoogleAIClient } from "@/lib/gemini-client";
+import { getGatewayModel } from "@/lib/gateway-client";
 import {CoreMessage, streamObject} from "ai";
 import { z } from "zod";
 
@@ -37,9 +36,6 @@ export async function POST(req: Request) {
 
         const { number, topic, problem_statement } = validationResult.data;
 
-        const currentGoogleClient = getGoogleAIClient();
-
-
         const systemPromptContent = `.
             IMPORTANT Each question should:
             1. Be clear and focused on the topic
@@ -72,7 +68,7 @@ export async function POST(req: Request) {
         ];
 
         const result = streamObject({
-            model: currentGoogleClient('gemini-2.0-flash-exp'),
+            model: getGatewayModel("google/gemini-2.0-flash"),
             schema: z.object({
                 questions: questionsResponseSchema
             }),

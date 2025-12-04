@@ -1,5 +1,5 @@
 
-import { internalMutation, query, QueryCtx } from "./_generated/server";
+import { internalMutation, mutation, query, QueryCtx } from "./_generated/server";
 import { UserJSON } from "@clerk/backend";
 import { v, Validator } from "convex/values";
 
@@ -68,3 +68,62 @@ async function userByClerkId(ctx: QueryCtx, clerkUserID: string) {
         .withIndex("byClerkUserID", (q) => q.eq("clerkUserID", clerkUserID))
         .unique();
 }
+
+// ============================================
+// Tutor Preferences
+// ============================================
+
+export const getTutorPreferences = query({
+    args: {},
+    handler: async (ctx) => {
+        const user = await getCurrentUser(ctx);
+        if (!user) return null;
+        
+        return user.tutorPreferences || {
+            proactiveHintsEnabled: true,
+            hintFrequency: "medium",
+            preferredHintStyle: "auto",
+            showResourceSuggestions: true,
+            idleThresholdMs: 30000,
+        };
+    },
+});
+
+export const updateTutorPreferences = mutation({
+    args: {
+        preferences: v.object({
+            proactiveHintsEnabled: v.optional(v.boolean()),
+            hintFrequency: v.optional(v.string()),
+            preferredHintStyle: v.optional(v.string()),
+            showResourceSuggestions: v.optional(v.boolean()),
+            idleThresholdMs: v.optional(v.number()),
+        }),
+    },
+    handler: async (ctx, args) => {
+        const user = await getCurrentUser(ctx);
+        if (!user) {
+            return { success: false, message: "User not found" };
+        }
+
+        const currentPrefs = user.tutorPreferences || {
+            proactiveHintsEnabled: true,
+            hintFrequency: "medium",
+            preferredHintStyle: "auto",
+            showResourceSuggestions: true,
+            idleThresholdMs: 30000,
+        };
+
+        const updatedPrefs = {
+            ...currentPrefs,
+            ...Object.fromEntries(
+                Object.entries(args.preferences).filter(([_, v]) => v !== undefined)
+            ),
+        };
+
+        await ctx.db.patch(user._id, {
+            tutorPreferences: updatedPrefs,
+        });
+
+        return { success: true, preferences: updatedPrefs };
+    },
+});

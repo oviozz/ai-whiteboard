@@ -1,10 +1,10 @@
 import {internal} from "./_generated/api";
-import {action, internalAction, internalMutation} from "./_generated/server";
+import {action, internalAction, internalMutation, mutation, query} from "./_generated/server";
 import {v} from "convex/values";
 import {Id} from "./_generated/dataModel";
-import {CoreMessage, ImagePart, streamText, TextPart} from "ai";
+import {CoreMessage, ImagePart, streamText, TextPart, generateText} from "ai";
 import {containsWhiteboardTrigger} from "../src/lib/utils";
-import {getGoogleAIClient} from "../src/lib/gemini-client";
+import {getGatewayModel, getGatewayClient} from "../src/lib/gateway-client";
 
 export const generateResponse = action({
     args: {
@@ -16,7 +16,7 @@ export const generateResponse = action({
         const {whiteboardID, userMessage, storageID} = args;
 
         try {
-            getGoogleAIClient();
+            getGatewayClient();
         } catch (error: any) {
             console.error("Failed to initialize AI client:", error.message);
             return {success: false, error: error.message || "AI service is not configured."};
@@ -100,8 +100,6 @@ export const _streamAndSaveResponse = internalAction({
     handler: async (ctx, args) => {
 
         const {botMessageId, userMessage, whiteboardID, imageURL} = args;
-        const currentGoogleClient = getGoogleAIClient();
-
         try {
 
             const [whiteboard, history] = await Promise.all([
@@ -122,8 +120,8 @@ export const _streamAndSaveResponse = internalAction({
             const { topic, problem_statement } = whiteboard;
 
 
-            const historyMessages: CoreMessage[] = history.map(msg => ({
-                role: msg.isBot ? 'assistant' : 'user',
+            const historyMessages: CoreMessage[] = history.map((msg: { isBot: boolean; text: string }) => ({
+                role: msg.isBot ? 'assistant' : 'user' as const,
                 content: msg.text,
             }));
 
@@ -197,6 +195,7 @@ export const _streamAndSaveResponse = internalAction({
             let userContent: string | Array<TextPart | ImagePart> = userMessage;
 
             if (imageURL) {
+                // Pass the Convex storage URL directly - it's publicly accessible
                 userContent = [
                     { type: "text", text: userMessage } as TextPart,
                     {
@@ -222,9 +221,7 @@ export const _streamAndSaveResponse = internalAction({
             ];
 
             const {textStream} = await streamText({
-                model: currentGoogleClient('gemini-2.0-flash-exp', {
-                    useSearchGrounding: true,
-                }), // Or your preferred model
+                model: getGatewayModel("google/gemini-2.0-flash"),
                 messages: messagesToAI,
             });
 
@@ -289,5 +286,279 @@ export const _updateBotMessageChunk = internalMutation({
             text: args.newText,
             updatedAt: Date.now(),
         });
+    },
+});
+
+// ============================================
+// Proactive Tutor Analysis
+// ============================================
+
+export type AnalysisResult = {
+    status: "correct" | "on_track" | "stuck" | "wrong" | "empty";
+    confidence: number; // 0-1
+    briefHint?: string; // Short hint for canvas overlay (< 15 words)
+    detailedGuidance?: string; // Longer guidance for floating bubble
+    hintType: "quick" | "detailed" | "none";
+    suggestedAction?: "encourage" | "hint" | "guide" | "wait";
+};
+
+export const analyzeWhiteboardProgress = action({
+    args: {
+        whiteboardID: v.id("whiteboards"),
+        screenshotStorageId: v.id("_storage"),
+        activityState: v.string(), // 'active' | 'idle' | 'stuck'
+        idleTimeMs: v.number(),
+    },
+    handler: async (ctx, args): Promise<{ success: boolean; analysis?: AnalysisResult; error?: string }> => {
+        const { whiteboardID, screenshotStorageId, activityState, idleTimeMs } = args;
+
+        try {
+            // Get whiteboard info and any uploaded documents for context
+            const [whiteboard, documents] = await Promise.all([
+                ctx.runQuery(internal.whiteboards.getWhiteboardByID, { whiteboardID }),
+                ctx.runQuery(internal.documents.getDocumentsByWhiteboardInternal, { whiteboardID }),
+            ]);
+
+            if (!whiteboard) {
+                return { success: false, error: "Whiteboard not found" };
+            }
+
+            // Get screenshot URL
+            const screenshotUrl = await ctx.runQuery(internal.whiteboardActions.getInternalImageUrl, {
+                storageId: screenshotStorageId,
+            });
+
+            if (!screenshotUrl) {
+                return { success: false, error: "Could not get screenshot URL" };
+            }
+
+            const { topic, problem_statement } = whiteboard;
+
+            // Build context from uploaded documents
+            let documentContext = "";
+            if (documents && documents.length > 0) {
+                type DocType = { extractedProblems?: Array<{ text: string; addedToBoard: boolean }> };
+                type ProblemType = { text: string; addedToBoard: boolean };
+                const problemsFromDocs = (documents as DocType[])
+                    .filter((d: DocType) => d.extractedProblems && d.extractedProblems.length > 0)
+                    .flatMap((d: DocType) => d.extractedProblems || [])
+                    .filter((p: ProblemType) => p.addedToBoard)
+                    .map((p: ProblemType) => p.text)
+                    .join("\n\n");
+                
+                if (problemsFromDocs) {
+                    documentContext = `\n\nProblems the student is working on:\n${problemsFromDocs}`;
+                }
+            }
+
+            const systemPrompt = `You are an expert educational tutor analyzing a student's work on a whiteboard. Your job is to:
+1. Assess if they're on the right track
+2. Identify if they're stuck or making mistakes
+3. Provide helpful, encouraging guidance
+
+**Context:**
+- Topic: ${topic}
+${problem_statement ? `- Problem/Focus: ${problem_statement}` : ""}
+- Student activity: ${activityState} (idle for ${Math.round(idleTimeMs / 1000)}s)
+${documentContext}
+
+**Analysis Guidelines:**
+- If the whiteboard is empty or has minimal content, status should be "empty"
+- If work shows correct approach/progress, status is "correct" or "on_track"
+- If there are mistakes or wrong direction, status is "wrong"
+- If student seems stuck (idle + incomplete work), status is "stuck"
+
+**Response Format (JSON only):**
+{
+  "status": "correct" | "on_track" | "stuck" | "wrong" | "empty",
+  "confidence": 0.0-1.0,
+  "briefHint": "Very short hint under 15 words for quick display, or null",
+  "detailedGuidance": "More detailed help if needed, 2-3 sentences max, or null",
+  "hintType": "quick" | "detailed" | "none",
+  "suggestedAction": "encourage" | "hint" | "guide" | "wait"
+}
+
+**Hint Guidelines:**
+- "none": Student doing well, no intervention needed
+- "quick": Small nudge needed (typo, minor error, almost there)
+- "detailed": Student needs more substantial help
+
+**Important:**
+- Be encouraging, never discouraging
+- Don't give away answers - guide toward discovery
+- If empty/minimal work and not much idle time, suggest "wait"
+- Brief hints should be actionable and specific
+- Return ONLY valid JSON, no other text`;
+
+            // Pass the Convex storage URL directly - it's publicly accessible
+            const userContent: Array<TextPart | ImagePart> = [
+                { type: "text", text: "Analyze this student's whiteboard work and provide guidance:" },
+                { type: "image", image: screenshotUrl },
+            ];
+
+            const messages: CoreMessage[] = [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userContent },
+            ];
+
+            const { text } = await generateText({
+                model: getGatewayModel("google/gemini-2.0-flash"),
+                messages,
+            });
+
+            // Parse the response
+            const jsonMatch = text.match(/\{[\s\S]*\}/);
+            if (!jsonMatch) {
+                console.error("Could not parse AI analysis response:", text);
+                return { success: false, error: "Invalid AI response format" };
+            }
+
+            const analysis: AnalysisResult = JSON.parse(jsonMatch[0]);
+
+            // Update tutor state in database
+            await ctx.runMutation(internal.ai._updateTutorState, {
+                whiteboardID,
+                status: analysis.status,
+                hint: analysis.hintType !== "none" ? {
+                    type: analysis.hintType,
+                    content: analysis.briefHint || analysis.detailedGuidance || "",
+                } : undefined,
+            });
+
+            return { success: true, analysis };
+
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : "Unknown error";
+            console.error("Whiteboard analysis error:", errorMessage);
+            return { success: false, error: errorMessage };
+        }
+    },
+});
+
+export const _updateTutorState = internalMutation({
+    args: {
+        whiteboardID: v.id("whiteboards"),
+        status: v.string(),
+        hint: v.optional(v.object({
+            type: v.string(),
+            content: v.string(),
+        })),
+    },
+    handler: async (ctx, args) => {
+        const { whiteboardID, status, hint } = args;
+        
+        // Check if tutor state exists
+        const existing = await ctx.db
+            .query("whiteboardTutorState")
+            .withIndex("byWhiteboardID", q => q.eq("whiteboardID", whiteboardID))
+            .first();
+
+        const now = Date.now();
+
+        if (existing) {
+            await ctx.db.patch(existing._id, {
+                lastAnalysis: now,
+                analysisCount: existing.analysisCount + 1,
+                currentStatus: status,
+                pendingHint: hint ? {
+                    type: hint.type,
+                    content: hint.content,
+                } : undefined,
+                lastActivity: now,
+            });
+        } else {
+            await ctx.db.insert("whiteboardTutorState", {
+                whiteboardID,
+                lastAnalysis: now,
+                analysisCount: 1,
+                currentStatus: status,
+                pendingHint: hint ? {
+                    type: hint.type,
+                    content: hint.content,
+                } : undefined,
+                hintsShown: 0,
+                lastActivity: now,
+            });
+        }
+    },
+});
+
+export const getTutorState = query({
+    args: { whiteboardID: v.id("whiteboards") },
+    handler: async (ctx, args) => {
+        return await ctx.db
+            .query("whiteboardTutorState")
+            .withIndex("byWhiteboardID", q => q.eq("whiteboardID", args.whiteboardID))
+            .first();
+    },
+});
+
+export const dismissHint = mutation({
+    args: { whiteboardID: v.id("whiteboards") },
+    handler: async (ctx, args) => {
+        const state = await ctx.db
+            .query("whiteboardTutorState")
+            .withIndex("byWhiteboardID", q => q.eq("whiteboardID", args.whiteboardID))
+            .first();
+
+        if (state && state.pendingHint) {
+            await ctx.db.patch(state._id, {
+                pendingHint: {
+                    ...state.pendingHint,
+                    dismissedAt: Date.now(),
+                },
+                hintsShown: state.hintsShown + 1,
+            });
+        }
+
+        return { success: true };
+    },
+});
+
+export const clearPendingHint = mutation({
+    args: { whiteboardID: v.id("whiteboards") },
+    handler: async (ctx, args) => {
+        const state = await ctx.db
+            .query("whiteboardTutorState")
+            .withIndex("byWhiteboardID", q => q.eq("whiteboardID", args.whiteboardID))
+            .first();
+
+        if (state) {
+            await ctx.db.patch(state._id, {
+                pendingHint: undefined,
+            });
+        }
+
+        return { success: true };
+    },
+});
+
+// ============================================
+// Simple Test Action - to verify LLM is working
+// ============================================
+export const testLLM = action({
+    args: {},
+    handler: async (): Promise<{ success: boolean; response?: string; error?: string }> => {
+        try {
+            console.log("Testing LLM with AI Gateway...");
+            
+            const result = await generateText({
+                model: getGatewayModel("google/gemini-2.0-flash"),
+                messages: [
+                    { role: "user", content: "Say 'Hello! The LLM is working correctly.' and nothing else." }
+                ],
+            });
+
+            console.log("LLM Response text:", result.text);
+
+            return { 
+                success: true, 
+                response: result.text || "(empty response)"
+            };
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : "Unknown error";
+            console.error("LLM Test Error:", errorMessage);
+            return { success: false, error: errorMessage };
+        }
     },
 });

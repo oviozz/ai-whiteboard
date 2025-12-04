@@ -14,7 +14,9 @@ import type {
   FunctionReference,
 } from "convex/server";
 import type * as ai from "../ai.js";
+import type * as documents from "../documents.js";
 import type * as http from "../http.js";
+import type * as resources from "../resources.js";
 import type * as users from "../users.js";
 import type * as whiteboardActions from "../whiteboardActions.js";
 import type * as whiteboardChatBot from "../whiteboardChatBot.js";
@@ -30,7 +32,9 @@ import type * as whiteboards from "../whiteboards.js";
  */
 declare const fullApi: ApiFromModules<{
   ai: typeof ai;
+  documents: typeof documents;
   http: typeof http;
+  resources: typeof resources;
   users: typeof users;
   whiteboardActions: typeof whiteboardActions;
   whiteboardChatBot: typeof whiteboardChatBot;
