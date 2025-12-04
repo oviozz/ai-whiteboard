@@ -7,7 +7,6 @@ import { Id } from "../../../convex/_generated/dataModel";
 import useActivityMonitor, { useAutoActivityTracking, ActivityState } from "@/hooks/use-activity-monitor";
 import useTutorHints, { AnalysisStatus, TutorHint } from "@/app/store/use-tutor-hints";
 import useScreenshot from "@/hooks/use-screenshot";
-import FloatingBubble from "./floating-bubble";
 import CanvasHint from "./canvas-hint";
 import { useCelebration } from "./celebration";
 
@@ -245,9 +244,6 @@ export default function ProactiveTutorProvider({
   return (
     <>
       {children}
-      
-      {/* Floating AI Bubble */}
-      <FloatingBubble />
       
       {/* Canvas Quick Hint Overlay */}
       <CanvasHint

@@ -273,38 +273,46 @@ export default function CreateNewWhiteboardButton({ query }: { query?: String })
 
     const renderStepIndicator = () => {
         const steps = [
-            { key: "details", label: "Details" },
+            { key: "details", label: "Topic" },
             { key: "upload", label: "Materials" },
         ];
 
         return (
-            <div className="flex items-center justify-center gap-2 mb-4">
-                {steps.map((s, index) => (
-                    <div key={s.key} className="flex items-center">
-                        <div className={`
-                            w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium border-2
-                            ${step === s.key || (step === "processing" && s.key === "upload") || (step === "creating" && s.key === "upload")
-                                ? "border-indigo-500 bg-indigo-500 text-white"
-                                : steps.findIndex(st => st.key === step) > index || step === "problems" || step === "creating"
-                                    ? "border-indigo-500 bg-indigo-100 text-indigo-700"
-                                    : "border-slate-300 bg-white text-slate-500"
-                            }
-                        `}>
-                            {steps.findIndex(st => st.key === step) > index || step === "problems" || step === "creating" ? (
-                                <Check className="w-4 h-4" />
-                            ) : (
-                                index + 1
+            <div className="flex items-center justify-center gap-3 mb-6">
+                {steps.map((s, index) => {
+                    const isActive = step === s.key || (step === "processing" && s.key === "upload") || (step === "creating" && s.key === "upload");
+                    const isComplete = steps.findIndex(st => st.key === step) > index || step === "problems" || step === "creating";
+                    
+                    return (
+                        <div key={s.key} className="flex items-center">
+                            <div className="flex flex-col items-center">
+                                <div className={`
+                                    w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold border-2 transition-all
+                                    ${isActive
+                                        ? "border-indigo-500 bg-indigo-500 text-white"
+                                        : isComplete
+                                            ? "border-indigo-500 bg-indigo-100 text-indigo-700"
+                                            : "border-slate-200 bg-white text-slate-400"
+                                    }
+                                `}>
+                                    {isComplete ? (
+                                        <Check className="w-5 h-5" />
+                                    ) : (
+                                        index + 1
+                                    )}
+                                </div>
+                                <span className={`text-xs mt-1.5 font-medium ${isActive || isComplete ? "text-indigo-600" : "text-slate-400"}`}>
+                                    {s.label}
+                                </span>
+                            </div>
+                            {index < steps.length - 1 && (
+                                <div className={`w-12 h-0.5 mx-2 -mt-4 ${
+                                    isComplete ? "bg-indigo-500" : "bg-slate-200"
+                                }`} />
                             )}
                         </div>
-                        {index < steps.length - 1 && (
-                            <div className={`w-8 h-0.5 mx-1 ${
-                                steps.findIndex(st => st.key === step) > index 
-                                    ? "bg-indigo-500" 
-                                    : "bg-slate-200"
-                            }`} />
-                        )}
-                    </div>
-                ))}
+                    );
+                })}
             </div>
         );
     };
@@ -325,49 +333,53 @@ export default function CreateNewWhiteboardButton({ query }: { query?: String })
                     )}
                 </Button>
             </DialogTrigger>
-            <DialogContent className="rounded-xl bg-white max-w-lg">
+            <DialogContent className="rounded-2xl bg-white max-w-xl p-8">
                 {/* Step 1: Details */}
                 {step === "details" && (
-                    <div className="space-y-5">
+                    <div className="space-y-6">
                         {renderStepIndicator()}
-                        <DialogHeader>
-                            <DialogTitle className="leading-4">What would you like to learn?</DialogTitle>
-                            <DialogDescription>
+                        <DialogHeader className="text-center">
+                            <DialogTitle className="text-xl font-bold text-slate-800">What would you like to learn?</DialogTitle>
+                            <DialogDescription className="text-base text-slate-500 mt-2">
                                 Enter your topic and describe what you need help with.
                             </DialogDescription>
                         </DialogHeader>
                         <div className="grid gap-5">
                             <div className="grid gap-2">
-                                <Label htmlFor="topic">Topic</Label>
+                                <Label htmlFor="topic" className="text-sm font-medium text-slate-700">Topic</Label>
                                 <Input
                                     value={whiteboardForm.topic}
                                     onChange={change_form_value}
                                     id="topic"
                                     name="topic"
                                     placeholder="e.g. Calculus, Physics, Programming"
+                                    className="h-12 text-base px-4"
                                 />
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="problem_statement">What do you need help with? (Optional)</Label>
+                                <Label htmlFor="problem_statement" className="text-sm font-medium text-slate-700">
+                                    What do you need help with? <span className="text-slate-400 font-normal">(Optional)</span>
+                                </Label>
                                 <Textarea
                                     value={whiteboardForm.problem_statement}
                                     onChange={change_form_value}
                                     id="problem_statement"
                                     name="problem_statement"
                                     placeholder="Describe the specific problem or concept you're working on..."
-                                    rows={3}
+                                    rows={4}
+                                    className="text-base px-4 py-3"
                                 />
                             </div>
                         </div>
-                        <DialogFooter>
+                        <DialogFooter className="mt-6">
                             <DialogClose asChild>
-                                <Button type="button" variant="neutral">
+                                <Button type="button" variant="neutral" className="h-11 px-5">
                                     Cancel
                                 </Button>
                             </DialogClose>
-                            <Button type="button" onClick={goToNextStep}>
+                            <Button type="button" onClick={goToNextStep} className="h-11 px-6">
                                 Next
-                                <ArrowRight className="w-4 h-4 ml-1" />
+                                <ArrowRight className="w-4 h-4 ml-2" />
                             </Button>
                         </DialogFooter>
                     </div>
@@ -375,12 +387,12 @@ export default function CreateNewWhiteboardButton({ query }: { query?: String })
 
                 {/* Step 2: Upload Materials */}
                 {step === "upload" && (
-                    <div className="space-y-5">
+                    <div className="space-y-6">
                         {renderStepIndicator()}
-                        <DialogHeader>
-                            <DialogTitle className="leading-4">Upload Study Materials</DialogTitle>
-                            <DialogDescription>
-                                Upload your slides, PDFs, or images. The AI will extract problems and use them as context. (Optional)
+                        <DialogHeader className="text-center">
+                            <DialogTitle className="text-xl font-bold text-slate-800">Upload Study Materials</DialogTitle>
+                            <DialogDescription className="text-base text-slate-500 mt-2">
+                                Upload your slides, PDFs, or images for personalized help. <span className="text-slate-400">(Optional)</span>
                             </DialogDescription>
                         </DialogHeader>
                         
@@ -391,16 +403,17 @@ export default function CreateNewWhiteboardButton({ query }: { query?: String })
                             maxFileSize={10 * 1024 * 1024}
                         />
 
-                        <DialogFooter className="flex-col sm:flex-row gap-2">
-                            <Button type="button" variant="neutral" onClick={goToPreviousStep}>
-                                <ArrowLeft className="w-4 h-4 mr-1" />
+                        <DialogFooter className="flex-col sm:flex-row gap-3 mt-6">
+                            <Button type="button" variant="neutral" onClick={goToPreviousStep} className="h-11 px-5">
+                                <ArrowLeft className="w-4 h-4 mr-2" />
                                 Back
                             </Button>
-                            <div className="flex gap-2">
+                            <div className="flex gap-3">
                                 <Button 
                                     type="button" 
                                     variant="neutral"
                                     onClick={() => create_new_whiteboard(true)}
+                                    className="h-11 px-5"
                                 >
                                     Skip
                                 </Button>
@@ -408,6 +421,7 @@ export default function CreateNewWhiteboardButton({ query }: { query?: String })
                                     type="button" 
                                     onClick={goToNextStep}
                                     disabled={isPending}
+                                    className="h-11 px-6"
                                 >
                                     {uploadedFiles.length > 0 ? (
                                         <>

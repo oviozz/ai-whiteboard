@@ -24,6 +24,7 @@ import TextEditPopover from "@/components/text-edit-popover";
 import MarkdownRenderer from "@/components/markdown-renderer";
 import SolveItAllProvider from "@/components/providers/solve-it-all-provider";
 import ProactiveTutorProvider from "@/components/ai-tutor/proactive-tutor-provider";
+import HeaderTutorIndicator from "@/components/ai-tutor/header-tutor-indicator";
 
 // --- Constants ---
 const MIN_ZOOM = 0.1
@@ -1675,10 +1676,16 @@ export default function WhiteboardClient({ whiteboardId }: { whiteboardId?: Id<"
         )
 
     return (
-        <div className="flex flex-col w-full h-screen bg-slate-100 dark:bg-slate-900">
+        <div className="flex flex-col w-full h-screen bg-slate-100 dark:bg-slate-900 relative">
             <WhiteboardHeader
                 whiteboardID={whiteboardId}
                 whiteboardName={whiteboardTopic || "Whiteboard"} />
+            
+            {/* AI Tutor Indicator - Absolutely positioned below header */}
+            <div className="absolute top-4 right-6 z-50">
+                <HeaderTutorIndicator />
+            </div>
+            
             <div className="flex flex-1 w-full overflow-hidden">
                 <WhiteboardSidebar
                     whiteboardID={whiteboardId as Id<"whiteboards">}
@@ -1686,7 +1693,6 @@ export default function WhiteboardClient({ whiteboardId }: { whiteboardId?: Id<"
                     setSelectedTool={setSelectedTool}
                     onUndo={handleUndo}
                     onRedo={handleRedo}
-                    onHint={() => toast.info("Hint feature not implemented.")}
                     onCheck={() => toast.info("Check work feature not implemented.")}
                     onSubmit={() => toast.info("Submit work feature not implemented.")}
                     onImageToolSelect={() => imageUploadInputRef.current?.click()}

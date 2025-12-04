@@ -12,10 +12,18 @@ import { CoreMessage, generateText, ImagePart, TextPart } from "ai";
 export const getDocumentsByWhiteboard = query({
     args: { whiteboardID: v.id("whiteboards") },
     handler: async (ctx, args) => {
-        return await ctx.db
+        const docs = await ctx.db
             .query("whiteboardDocuments")
             .withIndex("byWhiteboardID", (q) => q.eq("whiteboardID", args.whiteboardID))
             .collect();
+        
+        // Include URLs for each document
+        return await Promise.all(
+            docs.map(async (doc) => ({
+                ...doc,
+                url: await ctx.storage.getUrl(doc.storageId),
+            }))
+        );
     },
 });
 
