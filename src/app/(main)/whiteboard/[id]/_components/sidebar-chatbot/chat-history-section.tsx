@@ -6,7 +6,7 @@ import type {
   ChatHistoryPromptItem, 
   ChatHistoryActionItem,
   ChatHistoryContinuationItem,
-} from "@/lib/agent/agent-actions"
+} from "@/lib/agent/types"
 import { ChatHistoryPrompt } from "./chat-history-prompt"
 import { ChatHistoryGroup, getActionHistoryGroups } from "./chat-history-group"
 import { Loader2 } from "lucide-react"

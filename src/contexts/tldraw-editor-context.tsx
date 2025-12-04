@@ -2,15 +2,20 @@
 
 import { createContext, useContext, useState, ReactNode } from 'react'
 import type { Editor } from 'tldraw'
+import type { TldrawAgent } from '@/lib/agent/tldraw-agent'
 
 interface TldrawEditorContextType {
   editor: Editor | null
   setEditor: (editor: Editor | null) => void
+  agent: TldrawAgent | null
+  setAgent: (agent: TldrawAgent | null) => void
 }
 
 const TldrawEditorContext = createContext<TldrawEditorContextType>({
   editor: null,
   setEditor: () => {},
+  agent: null,
+  setAgent: () => {},
 })
 
 interface TldrawEditorProviderProps {
@@ -19,9 +24,10 @@ interface TldrawEditorProviderProps {
 
 export function TldrawEditorProvider({ children }: TldrawEditorProviderProps) {
   const [editor, setEditor] = useState<Editor | null>(null)
+  const [agent, setAgent] = useState<TldrawAgent | null>(null)
   
   return (
-    <TldrawEditorContext.Provider value={{ editor, setEditor }}>
+    <TldrawEditorContext.Provider value={{ editor, setEditor, agent, setAgent }}>
       {children}
     </TldrawEditorContext.Provider>
   )

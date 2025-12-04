@@ -1,66 +1,60 @@
 /**
- * Agent Helpers
- * 
- * Provides utility functions for transformations, validation, and 
- * shape ID management during agent request processing.
- * Based on tldraw Agent Starter Kit's AgentHelpers pattern.
+ * AgentHelpers
+ *
+ * This class handles transformations that happen throughout a request.
+ * It contains helpers for transforming prompt parts before sending to the model,
+ * as well as transforming incoming actions from the model.
+ *
+ * Matches the tldraw agent starter kit pattern.
  */
 
-import type { Editor, TLShapeId, BoxModel, VecModel } from "tldraw";
+import type { BoxModel, Editor, TLShapeId, VecModel } from "tldraw";
+import type { TldrawAgent } from "./tldraw-agent";
 import type { SimpleShape, SimpleFill } from "./agent-actions";
+import type { ContextItem } from "./types";
 
-// ============================================
-// Types
-// ============================================
+// Valid fill values
+const VALID_FILLS: SimpleFill[] = ["none", "semi", "solid", "pattern"];
 
 export interface AgentHelpersOptions {
-  editor: Editor;
-  chatOrigin?: VecModel;
+  agent: TldrawAgent;
 }
 
-// ============================================
-// AgentHelpers Class
-// ============================================
-
 /**
- * This class handles transformations throughout an agent request.
- * It contains helpers that can be used to:
- * - Transform positions relative to chat origin
- * - Validate incoming data from the model
- * - Manage shape ID uniqueness and mapping
- * - Round numbers for cleaner model output
+ * AgentHelpers class for handling transformations during agent requests
  */
 export class AgentHelpers {
-  /** The tldraw editor instance */
+  /** The agent this instance is for */
+  agent: TldrawAgent;
+
+  /** The editor this instance is for */
   editor: Editor;
-  
-  /** The offset to apply for relative coordinates */
+
+  /** The offset from the chat origin */
   offset: VecModel = { x: 0, y: 0 };
-  
-  /** Map of AI-provided IDs to actual tldraw IDs */
+
+  /** Map of shape IDs that have been transformed */
   shapeIdMap = new Map<string, string>();
-  
+
   /** Map of rounding diffs for restoring original values */
   roundingDiffMap = new Map<string, number>();
 
-  constructor(options: AgentHelpersOptions) {
-    this.editor = options.editor;
-    
-    // Set offset based on chat origin
-    if (options.chatOrigin) {
-      this.offset = {
-        x: -options.chatOrigin.x,
-        y: -options.chatOrigin.y,
-      };
-    }
+  constructor(agent: TldrawAgent) {
+    this.agent = agent;
+    this.editor = agent.editor;
+    const origin = agent.$chatOrigin.get();
+    this.offset = {
+      x: -origin.x,
+      y: -origin.y,
+    };
   }
 
   // ============================================
-  // Coordinate Transformations
+  // Vector/Position Transformations
   // ============================================
 
   /**
-   * Apply offset to a position (for sending to model)
+   * Apply offset to a position
    */
   applyOffsetToVec(position: VecModel): VecModel {
     return {
@@ -70,7 +64,7 @@ export class AgentHelpers {
   }
 
   /**
-   * Remove offset from a position (for applying model output)
+   * Remove offset from a position
    */
   removeOffsetFromVec(position: VecModel): VecModel {
     return {
@@ -79,8 +73,12 @@ export class AgentHelpers {
     };
   }
 
+  // ============================================
+  // Box/Bounds Transformations
+  // ============================================
+
   /**
-   * Apply offset to a box (for sending to model)
+   * Apply offset to a box
    */
   applyOffsetToBox(box: BoxModel): BoxModel {
     return {
@@ -92,7 +90,7 @@ export class AgentHelpers {
   }
 
   /**
-   * Remove offset from a box (for applying model output)
+   * Remove offset from a box
    */
   removeOffsetFromBox(box: BoxModel): BoxModel {
     return {
@@ -104,11 +102,26 @@ export class AgentHelpers {
   }
 
   /**
-   * Apply offset to a shape (for sending to model)
+   * Round the values of a box
+   */
+  roundBox(boxModel: BoxModel): BoxModel {
+    return {
+      x: Math.round(boxModel.x),
+      y: Math.round(boxModel.y),
+      w: Math.round(boxModel.w),
+      h: Math.round(boxModel.h),
+    };
+  }
+
+  // ============================================
+  // Shape Transformations
+  // ============================================
+
+  /**
+   * Apply offset to a shape
    */
   applyOffsetToShape(shape: SimpleShape): SimpleShape {
     if ("x1" in shape) {
-      // Arrow or line shape
       return {
         ...shape,
         x1: shape.x1 + this.offset.x,
@@ -128,7 +141,33 @@ export class AgentHelpers {
   }
 
   /**
-   * Remove offset from a shape (for applying model output)
+   * Apply offset to a partial shape
+   */
+  applyOffsetToShapePartial(shape: Partial<SimpleShape>): Partial<SimpleShape> {
+    const result = { ...shape };
+    if ("x" in shape && shape.x !== undefined) {
+      (result as { x: number }).x = shape.x + this.offset.x;
+    }
+    if ("y" in shape && shape.y !== undefined) {
+      (result as { y: number }).y = shape.y + this.offset.y;
+    }
+    if ("x1" in shape && shape.x1 !== undefined) {
+      (result as { x1: number }).x1 = shape.x1 + this.offset.x;
+    }
+    if ("y1" in shape && shape.y1 !== undefined) {
+      (result as { y1: number }).y1 = shape.y1 + this.offset.y;
+    }
+    if ("x2" in shape && shape.x2 !== undefined) {
+      (result as { x2: number }).x2 = shape.x2 + this.offset.x;
+    }
+    if ("y2" in shape && shape.y2 !== undefined) {
+      (result as { y2: number }).y2 = shape.y2 + this.offset.y;
+    }
+    return result;
+  }
+
+  /**
+   * Remove offset from a shape
    */
   removeOffsetFromShape(shape: SimpleShape): SimpleShape {
     if ("x1" in shape) {
@@ -150,12 +189,207 @@ export class AgentHelpers {
     return shape;
   }
 
+  /**
+   * Round shape coordinates
+   */
+  roundShape(shape: SimpleShape): SimpleShape {
+    if ("x1" in shape) {
+      let rounded = { ...shape };
+      rounded = this.roundPropertyGeneric(rounded, "x1") as typeof rounded;
+      rounded = this.roundPropertyGeneric(rounded, "y1") as typeof rounded;
+      rounded = this.roundPropertyGeneric(rounded, "x2") as typeof rounded;
+      rounded = this.roundPropertyGeneric(rounded, "y2") as typeof rounded;
+      return rounded;
+    } else if ("x" in shape) {
+      let rounded = { ...shape };
+      rounded = this.roundPropertyGeneric(rounded, "x") as typeof rounded;
+      rounded = this.roundPropertyGeneric(rounded, "y") as typeof rounded;
+      if ("w" in rounded) {
+        rounded = this.roundPropertyGeneric(rounded, "w") as typeof rounded;
+        rounded = this.roundPropertyGeneric(rounded, "h") as typeof rounded;
+      }
+      return rounded;
+    }
+    return shape;
+  }
+
+  /**
+   * Round a partial shape
+   */
+  roundShapePartial(shape: Partial<SimpleShape>): Partial<SimpleShape> {
+    let result = { ...shape };
+    for (const prop of ["x1", "y1", "x2", "y2", "x", "y", "w", "h"] as const) {
+      if (prop in result) {
+        result = this.roundProperty(result, prop as keyof typeof result);
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Reverse rounding on a shape
+   */
+  unroundShape(shape: SimpleShape): SimpleShape {
+    if ("x1" in shape) {
+      let unrounded = { ...shape };
+      unrounded = this.unroundPropertyGeneric(unrounded, "x1") as typeof unrounded;
+      unrounded = this.unroundPropertyGeneric(unrounded, "y1") as typeof unrounded;
+      unrounded = this.unroundPropertyGeneric(unrounded, "x2") as typeof unrounded;
+      unrounded = this.unroundPropertyGeneric(unrounded, "y2") as typeof unrounded;
+      return unrounded;
+    } else if ("x" in shape) {
+      let unrounded = { ...shape };
+      unrounded = this.unroundPropertyGeneric(unrounded, "x") as typeof unrounded;
+      unrounded = this.unroundPropertyGeneric(unrounded, "y") as typeof unrounded;
+      if ("w" in unrounded) {
+        unrounded = this.unroundPropertyGeneric(unrounded, "w") as typeof unrounded;
+        unrounded = this.unroundPropertyGeneric(unrounded, "h") as typeof unrounded;
+      }
+      return unrounded;
+    }
+    return shape;
+  }
+
+  // ============================================
+  // Context Item Transformations
+  // ============================================
+
+  /**
+   * Apply offset to a context item
+   */
+  applyOffsetToContextItem(contextItem: ContextItem): ContextItem {
+    switch (contextItem.type) {
+      case "shape": {
+        return {
+          ...contextItem,
+          shape: this.applyOffsetToShape(contextItem.shape),
+        };
+      }
+      case "shapes": {
+        return {
+          ...contextItem,
+          shapes: contextItem.shapes.map((shape) =>
+            this.applyOffsetToShape(shape)
+          ),
+        };
+      }
+      case "area": {
+        return {
+          ...contextItem,
+          bounds: this.applyOffsetToBox(contextItem.bounds),
+        };
+      }
+      case "point": {
+        return {
+          ...contextItem,
+          point: this.applyOffsetToVec(contextItem.point),
+        };
+      }
+    }
+  }
+
+  /**
+   * Round context item values
+   */
+  roundContextItem(contextItem: ContextItem): ContextItem {
+    switch (contextItem.type) {
+      case "shape": {
+        return {
+          ...contextItem,
+          shape: this.roundShape(contextItem.shape),
+        };
+      }
+      case "shapes": {
+        return {
+          ...contextItem,
+          shapes: contextItem.shapes.map((shape) => this.roundShape(shape)),
+        };
+      }
+      case "area": {
+        return {
+          ...contextItem,
+          bounds: this.roundBox(contextItem.bounds),
+        };
+      }
+      case "point": {
+        return {
+          ...contextItem,
+          point: this.roundVec(contextItem.point),
+        };
+      }
+    }
+  }
+
+  // ============================================
+  // Shape ID Validation
+  // ============================================
+
+  /**
+   * Ensure a shape ID is unique
+   */
+  ensureShapeIdIsUnique(id: string): string {
+    const { editor } = this.agent;
+    const idWithoutPrefix = id.startsWith("shape:") ? id.slice(6) : id;
+
+    let newId = idWithoutPrefix;
+    let existingShape = editor.getShape(`shape:${newId}` as TLShapeId);
+
+    while (existingShape) {
+      const match = /^.*(\d+)$/.exec(newId);
+      if (match) {
+        newId = newId.replace(/(\d+)(?=\D?)$/, (m) => (+m + 1).toString());
+      } else {
+        newId = `${newId}-1`;
+      }
+      existingShape = editor.getShape(`shape:${newId}` as TLShapeId);
+    }
+
+    if (idWithoutPrefix !== newId) {
+      this.shapeIdMap.set(idWithoutPrefix, newId);
+    }
+
+    return idWithoutPrefix === id ? newId : `shape:${newId}`;
+  }
+
+  /**
+   * Ensure a shape ID refers to a real shape
+   */
+  ensureShapeIdExists(id: string): string | null {
+    const { editor } = this.agent;
+    const idWithoutPrefix = id.startsWith("shape:") ? id.slice(6) : id;
+
+    // Check if we have a transformed ID
+    const existingId = this.shapeIdMap.get(idWithoutPrefix);
+    if (existingId) {
+      return existingId;
+    }
+
+    // Check if the shape exists
+    const existingShape = editor.getShape(
+      `shape:${idWithoutPrefix}` as TLShapeId
+    );
+    if (existingShape) {
+      return id;
+    }
+
+    return null;
+  }
+
+  /**
+   * Ensure all shape IDs refer to real shapes
+   */
+  ensureShapeIdsExist(ids: string[]): string[] {
+    return ids
+      .map((id) => this.ensureShapeIdExists(id))
+      .filter((v): v is string => v !== null);
+  }
+
   // ============================================
   // Value Validation
   // ============================================
 
   /**
-   * Ensure a value is a valid number
+   * Ensure a value is a number
    */
   ensureValueIsNumber(value: unknown): number | null {
     if (typeof value === "number" && !isNaN(value)) {
@@ -171,7 +405,7 @@ export class AgentHelpers {
   }
 
   /**
-   * Ensure a value is a valid vector (point with x and y)
+   * Ensure a value is a vector
    */
   ensureValueIsVec(value: unknown): VecModel | null {
     if (!value || typeof value !== "object") return null;
@@ -186,212 +420,127 @@ export class AgentHelpers {
   }
 
   /**
-   * Ensure a value is a valid boolean
+   * Ensure a value is a boolean
    */
   ensureValueIsBoolean(value: unknown): boolean | null {
-    if (typeof value === "boolean") {
-      return value;
-    }
-    if (typeof value === "number") {
-      return value > 0;
-    }
-    if (typeof value === "string") {
-      return value.toLowerCase() !== "false" && value !== "0";
-    }
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value > 0;
+    if (typeof value === "string") return value !== "false";
     return null;
   }
 
   /**
-   * Ensure a value is a valid fill type
+   * Ensure a value is a valid fill
    */
   ensureValueIsSimpleFill(value: unknown): SimpleFill | null {
-    const validFills: SimpleFill[] = ["none", "semi", "solid", "pattern"];
-    if (typeof value === "string" && validFills.includes(value as SimpleFill)) {
+    if (typeof value === "string" && VALID_FILLS.includes(value as SimpleFill)) {
       return value as SimpleFill;
     }
     return null;
   }
 
   // ============================================
-  // Shape ID Management
+  // Rounding Utilities
   // ============================================
 
   /**
-   * Ensure a shape ID is unique, incrementing if necessary.
-   * Tracks the mapping so future references work correctly.
+   * Round a vector
    */
-  ensureShapeIdIsUnique(id: string): string {
-    const { editor } = this;
-    const idWithoutPrefix = id.startsWith("shape:") ? id.slice(6) : id;
-
-    // Find unique ID by incrementing number at end
-    let newId = idWithoutPrefix;
-    let existingShape = editor.getShape(`shape:${newId}` as TLShapeId);
-    
-    while (existingShape) {
-      const match = /^(.+?)(\d+)$/.exec(newId);
-      if (match) {
-        newId = match[1] + String(parseInt(match[2]) + 1);
-      } else {
-        newId = `${newId}-1`;
-      }
-      existingShape = editor.getShape(`shape:${newId}` as TLShapeId);
-    }
-
-    // Track transformation if ID changed
-    if (idWithoutPrefix !== newId) {
-      this.shapeIdMap.set(idWithoutPrefix, newId);
-    }
-
-    // Return with or without prefix based on input
-    return id.startsWith("shape:") ? `shape:${newId}` : newId;
-  }
-
-  /**
-   * Ensure a shape ID refers to a real shape.
-   * Returns the mapped ID if available.
-   */
-  ensureShapeIdExists(id: string): string | null {
-    const { editor } = this;
-    const idWithoutPrefix = id.startsWith("shape:") ? id.slice(6) : id;
-
-    // Check if we have a mapping
-    const mappedId = this.shapeIdMap.get(idWithoutPrefix);
-    if (mappedId) {
-      return mappedId;
-    }
-
-    // Check if shape exists
-    const existingShape = editor.getShape(`shape:${idWithoutPrefix}` as TLShapeId);
-    if (existingShape) {
-      return id;
-    }
-
-    return null;
-  }
-
-  /**
-   * Ensure multiple shape IDs exist, filtering out non-existent ones
-   */
-  ensureShapeIdsExist(ids: string[]): string[] {
-    return ids
-      .map((id) => this.ensureShapeIdExists(id))
-      .filter((id): id is string => id !== null);
-  }
-
-  // ============================================
-  // Rounding Helpers
-  // ============================================
-
-  /**
-   * Round shape coordinates for cleaner model output
-   */
-  roundShape(shape: SimpleShape): SimpleShape {
-    const result = { ...shape };
-    
-    if ("x1" in result) {
-      result.x1 = this.roundAndSaveNumber(result.x1, `${shape.shapeId}_x1`);
-      result.y1 = this.roundAndSaveNumber(result.y1, `${shape.shapeId}_y1`);
-      result.x2 = this.roundAndSaveNumber(result.x2, `${shape.shapeId}_x2`);
-      result.y2 = this.roundAndSaveNumber(result.y2, `${shape.shapeId}_y2`);
-    } else if ("x" in result) {
-      result.x = this.roundAndSaveNumber(result.x, `${shape.shapeId}_x`);
-      result.y = this.roundAndSaveNumber(result.y, `${shape.shapeId}_y`);
-    }
-
-    if ("w" in result && "h" in result) {
-      const geoShape = result as { w: number; h: number; shapeId: string };
-      geoShape.w = this.roundAndSaveNumber(geoShape.w, `${shape.shapeId}_w`);
-      geoShape.h = this.roundAndSaveNumber(geoShape.h, `${shape.shapeId}_h`);
-    }
-
-    return result;
-  }
-
-  /**
-   * Restore original (unrounded) values for a shape
-   */
-  unroundShape(shape: SimpleShape): SimpleShape {
-    const result = { ...shape };
-    
-    if ("x1" in result) {
-      result.x1 = this.unroundAndRestoreNumber(result.x1, `${shape.shapeId}_x1`);
-      result.y1 = this.unroundAndRestoreNumber(result.y1, `${shape.shapeId}_y1`);
-      result.x2 = this.unroundAndRestoreNumber(result.x2, `${shape.shapeId}_x2`);
-      result.y2 = this.unroundAndRestoreNumber(result.y2, `${shape.shapeId}_y2`);
-    } else if ("x" in result) {
-      result.x = this.unroundAndRestoreNumber(result.x, `${shape.shapeId}_x`);
-      result.y = this.unroundAndRestoreNumber(result.y, `${shape.shapeId}_y`);
-    }
-
-    if ("w" in result && "h" in result) {
-      const geoShape = result as { w: number; h: number; shapeId: string };
-      geoShape.w = this.unroundAndRestoreNumber(geoShape.w, `${shape.shapeId}_w`);
-      geoShape.h = this.unroundAndRestoreNumber(geoShape.h, `${shape.shapeId}_h`);
-    }
-
-    return result;
-  }
-
-  /**
-   * Round a box's coordinates
-   */
-  roundBox(box: BoxModel): BoxModel {
+  roundVec(vecModel: VecModel): VecModel {
     return {
-      x: Math.round(box.x),
-      y: Math.round(box.y),
-      w: Math.round(box.w),
-      h: Math.round(box.h),
+      x: Math.round(vecModel.x),
+      y: Math.round(vecModel.y),
     };
   }
 
   /**
-   * Round a vector's coordinates
+   * Round a number and save the diff
    */
-  roundVec(vec: VecModel): VecModel {
-    return {
-      x: Math.round(vec.x),
-      y: Math.round(vec.y),
-    };
-  }
-
-  /**
-   * Round a number and save the diff for later restoration
-   */
-  private roundAndSaveNumber(num: number, key: string): number {
-    const rounded = Math.round(num);
-    const diff = rounded - num;
+  roundAndSaveNumber(number: number, key: string): number {
+    const roundedNumber = Math.round(number);
+    const diff = roundedNumber - number;
     this.roundingDiffMap.set(key, diff);
-    return rounded;
+    return roundedNumber;
   }
 
   /**
-   * Restore the original value from a rounded number
+   * Unround a number using saved diff
    */
-  private unroundAndRestoreNumber(num: number, key: string): number {
+  unroundAndRestoreNumber(number: number, key: string): number {
     const diff = this.roundingDiffMap.get(key);
-    if (diff === undefined) return num;
-    return num - diff;
+    if (diff === undefined) return number;
+    return number + diff;
   }
-
-  // ============================================
-  // Reset
-  // ============================================
 
   /**
-   * Clear all mappings and diffs
+   * Round a property of a shape
    */
-  reset(): void {
-    this.shapeIdMap.clear();
-    this.roundingDiffMap.clear();
+  roundProperty<T extends Partial<SimpleShape>>(
+    shape: T,
+    property: keyof T
+  ): T {
+    const value = shape[property];
+    if (typeof value !== "number") return shape;
+
+    const key = `${(shape as { shapeId?: string }).shapeId ?? "shape"}_${
+      property as string
+    }`;
+    const roundedValue = this.roundAndSaveNumber(value, key);
+
+    return { ...shape, [property]: roundedValue };
+  }
+
+  /**
+   * Round a property of a shape (generic version)
+   */
+  roundPropertyGeneric<T extends Record<string, unknown>>(
+    shape: T,
+    property: string
+  ): T {
+    const value = shape[property];
+    if (typeof value !== "number") return shape;
+
+    const key = `${(shape as { shapeId?: string }).shapeId ?? "shape"}_${property}`;
+    const roundedValue = this.roundAndSaveNumber(value, key);
+
+    return { ...shape, [property]: roundedValue };
+  }
+
+  /**
+   * Unround a property of a shape
+   */
+  unroundProperty<T extends SimpleShape>(shape: T, property: keyof T): T {
+    const value = shape[property];
+    if (typeof value !== "number") return shape;
+
+    const key = `${shape.shapeId}_${property as string}`;
+    const diff = this.roundingDiffMap.get(key);
+    if (diff === undefined) return shape;
+
+    return { ...shape, [property]: value + diff };
+  }
+
+  /**
+   * Unround a property of a shape (generic version)
+   */
+  unroundPropertyGeneric<T extends Record<string, unknown>>(
+    shape: T,
+    property: string
+  ): T {
+    const value = shape[property];
+    if (typeof value !== "number") return shape;
+
+    const key = `${(shape as { shapeId?: string }).shapeId ?? "shape"}_${property}`;
+    const diff = this.roundingDiffMap.get(key);
+    if (diff === undefined) return shape;
+
+    return { ...shape, [property]: value + diff };
   }
 }
 
-// ============================================
-// Factory Function
-// ============================================
-
-export function createAgentHelpers(options: AgentHelpersOptions): AgentHelpers {
-  return new AgentHelpers(options);
+/**
+ * Create an AgentHelpers instance
+ */
+export function createAgentHelpers(agent: TldrawAgent): AgentHelpers {
+  return new AgentHelpers(agent);
 }
-

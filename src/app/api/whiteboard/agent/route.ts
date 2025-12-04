@@ -9,6 +9,7 @@
 import { streamText, type CoreMessage } from "ai";
 import { NextRequest } from "next/server";
 import { getGatewayModel } from "@/lib/gateway-client";
+import { closeAndParseJson } from "@/lib/agent/utils/close-and-parse-json";
 
 // Shape type for context (matches the updated shape-serializer output)
 interface SimplifiedShape {
@@ -809,99 +810,76 @@ export async function POST(request: NextRequest) {
 
           let buffer = "";
           let cursor = 0;
-          let lastYieldedAction: Record<string, unknown> | null = null;
+          let maybeIncompleteAction: Record<string, unknown> | null = null;
           let startTime = Date.now();
 
           for await (const text of textStream) {
             buffer += text;
 
-            // Try to extract and parse JSON
-            // Remove any markdown code block markers
+            // Clean markdown code block markers
             const cleanBuffer = buffer
               .replace(/```json\s*/g, "")
               .replace(/```\s*/g, "");
 
-            const jsonMatch = cleanBuffer.match(
-              /\{[\s\S]*"actions"[\s\S]*\[[\s\S]*\]/
+            // Use closeAndParseJson for robust partial JSON parsing
+            const parsed = closeAndParseJson<{ actions?: unknown[] }>(
+              cleanBuffer
             );
-            if (jsonMatch) {
-              try {
-                let jsonStr = jsonMatch[0];
+            if (!parsed) continue;
 
-                // Balance brackets
-                const openBraces = (jsonStr.match(/\{/g) || []).length;
-                let closeBraces = (jsonStr.match(/\}/g) || []).length;
-                const openBrackets = (jsonStr.match(/\[/g) || []).length;
-                let closeBrackets = (jsonStr.match(/\]/g) || []).length;
+            const actions = parsed.actions;
+            if (!Array.isArray(actions)) continue;
+            if (actions.length === 0) continue;
 
-                while (openBrackets > closeBrackets) {
-                  jsonStr += "]";
-                  closeBrackets++;
-                }
-                while (openBraces > closeBraces) {
-                  jsonStr += "}";
-                  closeBraces++;
-                }
-
-                const parsed = JSON.parse(jsonStr);
-
-                if (parsed.actions && Array.isArray(parsed.actions)) {
-                  for (let i = cursor; i < parsed.actions.length; i++) {
-                    const action = parsed.actions[i];
-                    if (action && action._type) {
-                      const isComplete =
-                        i < parsed.actions.length - 1 ||
-                        (cleanBuffer.includes("]}") &&
-                          i === parsed.actions.length - 1);
-
-                      const streamingAction = {
-                        ...action,
-                        complete: isComplete,
-                        time: Date.now() - startTime,
-                      };
-
-                      const data = `data: ${JSON.stringify(streamingAction)}\n\n`;
-                      controller.enqueue(encoder.encode(data));
-
-                      if (isComplete) {
-                        cursor = i + 1;
-                        startTime = Date.now();
-                      }
-
-                      lastYieldedAction = action;
-                    }
-                  }
-                }
-              } catch {
-                // JSON not complete yet
+            // If actions list is ahead of cursor, we've completed the current action
+            if (actions.length > cursor) {
+              const action = actions[cursor - 1] as Record<string, unknown>;
+              if (action) {
+                const streamingAction = {
+                  ...action,
+                  complete: true,
+                  time: Date.now() - startTime,
+                };
+                const data = `data: ${JSON.stringify(streamingAction)}\n\n`;
+                controller.enqueue(encoder.encode(data));
+                maybeIncompleteAction = null;
               }
+              cursor++;
+            }
+
+            // Check current (potentially incomplete) action
+            const currentAction = actions[cursor - 1] as Record<
+              string,
+              unknown
+            >;
+            if (currentAction && currentAction._type) {
+              // If we don't have an incomplete action yet, this is start of new one
+              if (!maybeIncompleteAction) {
+                startTime = Date.now();
+              }
+
+              maybeIncompleteAction = currentAction;
+
+              // Yield the potentially incomplete action
+              const streamingAction = {
+                ...currentAction,
+                complete: false,
+                time: Date.now() - startTime,
+              };
+              const data = `data: ${JSON.stringify(streamingAction)}\n\n`;
+              controller.enqueue(encoder.encode(data));
             }
           }
 
-          // Finalize last action
-          if (lastYieldedAction) {
-            try {
-              const finalCleanBuffer = buffer
-                .replace(/```json\s*/g, "")
-                .replace(/```\s*/g, "");
-              const finalMatch = finalCleanBuffer.match(
-                /\{[\s\S]*"actions"[\s\S]*\[[\s\S]*\][\s\S]*\}/
-              );
-              if (finalMatch) {
-                const parsed = JSON.parse(finalMatch[0]);
-                if (parsed.actions && cursor < parsed.actions.length) {
-                  const finalAction = {
-                    ...parsed.actions[parsed.actions.length - 1],
-                    complete: true,
-                    time: Date.now() - startTime,
-                  };
-                  const data = `data: ${JSON.stringify(finalAction)}\n\n`;
-                  controller.enqueue(encoder.encode(data));
-                }
-              }
-            } catch {
-              // Ignore parse errors on finalization
-            }
+          // Finalize any remaining incomplete action
+          if (maybeIncompleteAction) {
+            const finalAction = {
+              ...maybeIncompleteAction,
+              complete: true,
+              time: Date.now() - startTime,
+            };
+            const data = `data: ${JSON.stringify(finalAction)}\n\n`;
+            controller.enqueue(encoder.encode(data));
           }
 
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));

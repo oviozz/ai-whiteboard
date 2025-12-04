@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react"
 import type { 
   ChatHistoryItem, 
   ChatHistoryActionItem,
-} from "@/lib/agent/agent-actions"
+} from "@/lib/agent/types"
 import { ChatHistorySection, getAgentHistorySections } from "./chat-history-section"
 
 interface ChatHistoryProps {

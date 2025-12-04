@@ -373,7 +373,11 @@ export function isCanvasAction(action: AgentAction): action is CanvasAction {
 export interface ChatHistoryPromptItem {
   type: "prompt"
   message: string
-  timestamp: number
+  timestamp?: number
+  /** Context items (shapes, areas, points) included in this prompt */
+  contextItems?: unknown[]
+  /** Selected shapes included in this prompt */
+  selectedShapes?: SimpleShape[]
 }
 
 export interface ChatHistoryActionItem {
@@ -386,6 +390,8 @@ export interface ChatHistoryActionItem {
 
 export interface ChatHistoryContinuationItem {
   type: "continuation"
+  /** Data from continuations */
+  data?: unknown[]
 }
 
 export type ChatHistoryItem = 
@@ -413,7 +419,7 @@ export function getActionInfo(action: Streaming<AgentAction>): ActionInfo {
     case "create":
       return {
         icon: "shapes",
-        description: action.intent || `Create ${action.shape._type} shape`,
+        description: action.intent || (action.shape ? `Create ${action.shape._type} shape` : "Creating shape..."),
       }
     case "pen":
       return {
@@ -433,29 +439,29 @@ export function getActionInfo(action: Streaming<AgentAction>): ActionInfo {
     case "label":
       return {
         icon: "tag",
-        description: action.intent || `Label shape: "${action.text}"`,
+        description: action.intent || (action.text ? `Label shape: "${action.text}"` : "Adding label..."),
       }
     case "place":
       return {
         icon: "shapes",
-        description: action.intent || `Place shape ${action.side} of reference`,
+        description: action.intent || (action.side ? `Place shape ${action.side} of reference` : "Placing shape..."),
       }
     case "think":
       return {
         icon: "brain",
-        description: action.text,
-        summary: `Thought for ${Math.ceil(action.time / 1000)} seconds`,
+        description: action.text || "Thinking...",
+        summary: `Thought for ${Math.ceil((action.time || 0) / 1000)} seconds`,
         canGroup: (prevAction) => prevAction._type === "think",
       }
     case "message":
       return {
         icon: "message",
-        description: action.text,
+        description: action.text || "",
       }
     case "review":
       return {
         icon: action.status === "correct" ? "check" : "warning",
-        description: action.text,
+        description: action.text || "Reviewing...",
       }
     // New action types from Agent Starter Kit
     case "clear":
@@ -481,17 +487,17 @@ export function getActionInfo(action: Streaming<AgentAction>): ActionInfo {
     case "align":
       return {
         icon: "shapes",
-        description: action.intent || `Align shapes: ${action.alignment}`,
+        description: action.intent || (action.alignment ? `Align shapes: ${action.alignment}` : "Aligning shapes..."),
       }
     case "distribute":
       return {
         icon: "shapes",
-        description: action.intent || `Distribute shapes ${action.direction}`,
+        description: action.intent || (action.direction ? `Distribute shapes ${action.direction}` : "Distributing shapes..."),
       }
     case "stack":
       return {
         icon: "shapes",
-        description: action.intent || `Stack shapes ${action.direction}`,
+        description: action.intent || (action.direction ? `Stack shapes ${action.direction}` : "Stacking shapes..."),
       }
     case "bringToFront":
       return {

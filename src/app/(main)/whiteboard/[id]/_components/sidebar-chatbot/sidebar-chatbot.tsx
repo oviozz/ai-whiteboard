@@ -27,10 +27,12 @@ import {
   isCanvasAction,
   type AgentAction,
   type Streaming,
-  type ChatHistoryItem,
-  type ChatHistoryActionItem,
-  type ChatHistoryPromptItem,
 } from "@/lib/agent";
+import type {
+  ChatHistoryItem,
+  ChatHistoryActionItem,
+  ChatHistoryPromptItem,
+} from "@/lib/agent/types";
 import { ChatHistory } from "./chat-history";
 import { Id } from "../../../../../../../convex/_generated/dataModel";
 import type { RecordsDiff, TLRecord, TLShapeId } from "tldraw";

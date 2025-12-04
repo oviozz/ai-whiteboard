@@ -3,10 +3,12 @@
 import { useMemo, useState } from "react"
 import type { 
   ChatHistoryActionItem,
+} from "@/lib/agent/types"
+import type {
   AgentAction,
   Streaming,
 } from "@/lib/agent/agent-actions"
-import { getActionInfo } from "@/lib/agent/agent-actions"
+import { getActionInfo } from "@/lib/agent/actions"
 import { AgentActionDisplay } from "./agent-action-display"
 import { 
   ChevronDown, 

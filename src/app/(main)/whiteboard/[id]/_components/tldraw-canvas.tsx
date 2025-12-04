@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useRef, useEffect, useState } from 'react'
+import { useCallback, useRef, useEffect, useState, useMemo } from 'react'
 import { 
   Tldraw, 
   getSnapshot, 
@@ -9,6 +9,7 @@ import {
   createTLStore,
   defaultShapeUtils,
   Editor,
+  TLComponents,
 } from 'tldraw'
 // CSS is imported in globals.css or layout
 import { useQuery, useMutation } from 'convex/react'
@@ -16,36 +17,56 @@ import { api } from '../../../../../../convex/_generated/api'
 import { Id } from '../../../../../../convex/_generated/dataModel'
 import { useTldrawEditor } from '@/contexts/tldraw-editor-context'
 import { Loader } from 'lucide-react'
+import { TldrawAgent } from '@/lib/agent/tldraw-agent'
+import { setAgentForTools, TargetAreaTool, TargetShapeTool } from '@/lib/agent/tools'
+import { ContextHighlights, AgentViewportBoundsHighlight } from '@/components/highlights'
 
 interface TldrawCanvasProps {
   whiteboardId: Id<"whiteboards">
 }
 
+// Custom tools for agent context selection
+const customTools = [TargetAreaTool, TargetShapeTool]
+
 // Separate component for the actual Tldraw editor to avoid hooks ordering issues
 function TldrawEditor({ 
   store, 
-  onMount 
+  onMount,
+  agent,
 }: { 
   store: TLStoreWithStatus & { status: 'synced-remote' }
   onMount: (editor: Editor) => (() => void) | void
+  agent: TldrawAgent | null
 }) {
+  // Custom components for agent highlights
+  const components: TLComponents = useMemo(() => ({
+    StylePanel: null,
+    InFrontOfTheCanvas: () => (
+      <>
+        {agent && <AgentViewportBoundsHighlight agent={agent} />}
+        {agent && <ContextHighlights agent={agent} />}
+      </>
+    ),
+  }), [agent])
+
   return (
     <div className="w-full h-full tldraw-container">
       <Tldraw
         store={store}
         onMount={onMount}
         autoFocus
-        // Hide the default style panel since we have our own in the sidebar
-        components={{
-          StylePanel: null,
-        }}
+        tools={customTools}
+        components={components}
       />
     </div>
   )
 }
 
 export default function TldrawCanvas({ whiteboardId }: TldrawCanvasProps) {
-  const { setEditor } = useTldrawEditor()
+  const { setEditor, setAgent } = useTldrawEditor()
+  
+  // Agent state
+  const [agent, setLocalAgent] = useState<TldrawAgent | null>(null)
   
   // Fetch whiteboard data including tldraw snapshot
   const whiteboardData = useQuery(api.whiteboardActions.getTldrawSnapshot, {
@@ -58,6 +79,7 @@ export default function TldrawCanvas({ whiteboardId }: TldrawCanvasProps) {
   const hasInitializedRef = useRef(false)
   const editorRef = useRef<Editor | null>(null)
   const isSavingRef = useRef(false)
+  const agentRef = useRef<TldrawAgent | null>(null)
   
   // Refs for debounced saving
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -128,13 +150,32 @@ export default function TldrawCanvas({ whiteboardId }: TldrawCanvasProps) {
     })
   }, [whiteboardData])
   
-  // Handle editor mount - setup auto-save with stable refs
+  // Handle editor mount - setup auto-save and agent with stable refs
   const handleMount = useCallback((editor: Editor) => {
     // Store editor in ref for stable access
     editorRef.current = editor
     
     // Store editor in context for other components to use
     setEditor(editor)
+    
+    // Create TldrawAgent for this editor
+    const newAgent = new TldrawAgent({
+      editor,
+      id: `whiteboard-${whiteboardIdRef.current}`,
+      apiEndpoint: '/api/whiteboard/agent',
+      defaultModel: 'google/gemini-2.0-flash',
+      onError: (e) => console.error('TldrawAgent error:', e),
+    })
+    
+    agentRef.current = newAgent
+    setLocalAgent(newAgent)
+    setAgent(newAgent)
+    setAgentForTools(newAgent)
+    
+    // Make agent available for debugging
+    if (typeof window !== 'undefined') {
+      (window as unknown as { agent: TldrawAgent }).agent = newAgent
+    }
     
     // Listen for document changes and auto-save with debounce
     const unsubscribe = editor.store.listen(
@@ -178,11 +219,18 @@ export default function TldrawCanvas({ whiteboardId }: TldrawCanvasProps) {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current)
       }
+      if (agentRef.current) {
+        agentRef.current.dispose()
+        setAgentForTools(null)
+        agentRef.current = null
+      }
       editorRef.current = null
       setEditor(null)
+      setAgent(null)
+      setLocalAgent(null)
     }
   // Using refs means we don't need dependencies that would cause re-renders
-  }, [setEditor])
+  }, [setEditor, setAgent])
   
   // Render based on store status
   if (storeWithStatus.status === 'loading') {
@@ -212,7 +260,8 @@ export default function TldrawCanvas({ whiteboardId }: TldrawCanvasProps) {
   return (
     <TldrawEditor 
       store={storeWithStatus as TLStoreWithStatus & { status: 'synced-remote' }} 
-      onMount={handleMount} 
+      onMount={handleMount}
+      agent={agent}
     />
   )
 }
