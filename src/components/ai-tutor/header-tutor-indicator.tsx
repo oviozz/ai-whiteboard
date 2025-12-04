@@ -1,9 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Bot,
-  ChevronDown,
   Lightbulb,
   Loader2,
   ListChecks,
@@ -15,6 +14,7 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  AlertTriangle,
 } from "lucide-react";
 import { BsStars } from "react-icons/bs";
 import { cn } from "@/lib/utils";
@@ -36,6 +36,9 @@ type HeaderTutorIndicatorProps = {
 export default function HeaderTutorIndicator({
   className,
 }: HeaderTutorIndicatorProps) {
+  // AI Tutor is currently disabled
+  return null;
+
   const {
     activeHint,
     activeTab,
@@ -58,11 +61,46 @@ export default function HeaderTutorIndicator({
 
   const [isOpen, setIsOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showReviewingBubble, setShowReviewingBubble] = useState(false);
+  const previousHintRef = useRef<string | null>(null);
 
   const hasHint = activeHint && activeHint.type !== "none";
   const hasSteps = guidedSteps.length > 0;
   const hasResources = videos.length > 0 || webResources.length > 0;
   const currentStep = guidedSteps[currentStepIndex];
+
+  // Show "Reviewing your work..." bubble when analyzing
+  useEffect(() => {
+    if (isAnalyzing) {
+      // Small delay before showing the bubble for smoother UX
+      const timer = setTimeout(() => {
+        setShowReviewingBubble(true);
+      }, 200);
+      return () => clearTimeout(timer);
+    } else {
+      // Keep showing for a moment after analysis completes
+      const timer = setTimeout(() => {
+        setShowReviewingBubble(false);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [isAnalyzing]);
+
+  // Auto-open popover when a new hint is available
+  useEffect(() => {
+    if (activeHint && activeHint.content !== previousHintRef.current) {
+      previousHintRef.current = activeHint.content;
+
+      // Auto-open for detailed hints or when user seems stuck
+      if (
+        activeHint.type === "detailed" ||
+        currentStatus === "stuck" ||
+        currentStatus === "wrong"
+      ) {
+        setIsOpen(true);
+      }
+    }
+  }, [activeHint, currentStatus]);
 
   // Get status config
   const getStatusConfig = () => {
@@ -105,14 +143,31 @@ export default function HeaderTutorIndicator({
       }
 
       if (hasHint) {
+        const isError = currentStatus === "wrong";
         return (
           <div className="space-y-3">
             <div className="flex items-start gap-2">
-              <div className="p-1 rounded border border-amber-300 mt-0.5">
-                <Lightbulb className="w-4 h-4 text-amber-600" />
+              <div
+                className={cn(
+                  "p-1 rounded border mt-0.5",
+                  isError ? "border-red-300" : "border-amber-300"
+                )}
+              >
+                {isError ? (
+                  <AlertTriangle className="w-4 h-4 text-red-600" />
+                ) : (
+                  <Lightbulb className="w-4 h-4 text-amber-600" />
+                )}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-amber-700 mb-1">Hint</p>
+                <p
+                  className={cn(
+                    "text-xs font-medium mb-1",
+                    isError ? "text-red-700" : "text-amber-700"
+                  )}
+                >
+                  {isError ? "Check This" : "Hint"}
+                </p>
                 <div className="text-sm text-slate-700">
                   <MarkdownRenderer content={activeHint!.content} />
                 </div>
@@ -158,6 +213,9 @@ export default function HeaderTutorIndicator({
           <div className="text-center py-4">
             <ListChecks className="w-10 h-10 text-slate-300 mx-auto mb-3" />
             <p className="text-sm text-slate-500">No guided steps yet</p>
+            <p className="text-xs text-slate-400 mt-1">
+              Steps will appear when you need help solving a problem.
+            </p>
           </div>
         );
       }
@@ -201,8 +259,8 @@ export default function HeaderTutorIndicator({
                         {currentStep.showingHint ? "Hide hint" : "Need a hint?"}
                       </button>
                       {currentStep.showingHint && (
-                        <p className="mt-1.5 text-xs text-amber-700 rounded px-2 py-1.5 border border-amber-200">
-                          💡 {currentStep.hint}
+                        <p className="mt-1.5 text-xs text-amber-700 rounded px-2 py-1.5 border border-amber-200 bg-amber-50">
+                          {currentStep.hint}
                         </p>
                       )}
                     </div>
@@ -267,6 +325,9 @@ export default function HeaderTutorIndicator({
           <div className="text-center py-4">
             <BookOpen className="w-10 h-10 text-slate-300 mx-auto mb-3" />
             <p className="text-sm text-slate-500">No resources yet</p>
+            <p className="text-xs text-slate-400 mt-1">
+              Helpful videos and articles will appear when you need them.
+            </p>
           </div>
         );
       }
@@ -354,116 +415,148 @@ export default function HeaderTutorIndicator({
 
   return (
     <>
-      <Popover open={isOpen} onOpenChange={setIsOpen}>
-        <PopoverTrigger asChild>
-          <div className="relative inline-flex items-center justify-center">
-            {/* Spinning border ring effect when active */}
-            {(isAnalyzing || hasHint) && (
-              <div
-                className="absolute rounded-full spin-border"
-                style={{
-                  width: "40px",
-                  height: "40px",
-                  background:
-                    "conic-gradient(from 0deg, #fb923c, #ec4899, #9333ea, #fb923c)",
-                  borderRadius: "50%",
-                  padding: "1.5px",
-                }}
-              >
-                <div className="w-full h-full rounded-full bg-white" />
-              </div>
-            )}
-
-            <button
-              className={cn(
-                "relative flex items-center justify-center p-2.5 rounded-full cursor-pointer transition-all duration-500 z-10",
-                "bg-gradient-to-r from-orange-400 via-pink-500 to-purple-600",
-                "hover:shadow-lg hover:shadow-pink-500/30",
-                className
-              )}
-            >
-              <BsStars className="w-5 h-5 text-white" />
-            </button>
-          </div>
-        </PopoverTrigger>
-
-        <PopoverContent
-          align="end"
-          className="w-80 p-0 border border-slate-200 bg-white shadow-none"
-          sideOffset={8}
+      <div className="relative flex items-center gap-2">
+        {/* Reviewing Work Bubble - slides in from the right */}
+        <div
+          className={cn(
+            "absolute right-full mr-3 whitespace-nowrap",
+            "flex items-center gap-1.5 px-2.5 py-1",
+            "transition-all duration-300 ease-out",
+            showReviewingBubble
+              ? "opacity-100 translate-x-0"
+              : "opacity-0 translate-x-4 pointer-events-none"
+          )}
         >
-          {/* Header */}
-          <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200">
-            <div className="flex items-center gap-2">
-              <BsStars className="w-4 h-4 text-pink-600" />
-              <span className="text-sm font-semibold text-slate-800">
-                AI Tutor
-              </span>
-              {isAnalyzing && (
-                <span className="flex items-center gap-1 text-xs text-slate-500">
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  Analyzing...
-                </span>
+          <Loader2 className="w-3 h-3 text-pink-500 animate-spin" />
+          <span className="text-xs font-medium bg-gradient-to-r from-orange-500 via-pink-500 to-purple-500 bg-clip-text text-transparent">
+            Reviewing...
+          </span>
+        </div>
+
+        <Popover open={isOpen} onOpenChange={setIsOpen}>
+          <PopoverTrigger asChild>
+            <div className="relative inline-flex items-center justify-center">
+              {/* Spinning border ring effect when active */}
+              {(isAnalyzing || hasHint) && (
+                <div
+                  className="absolute rounded-full spin-border"
+                  style={{
+                    width: "40px",
+                    height: "40px",
+                    background:
+                      "conic-gradient(from 0deg, #fb923c, #ec4899, #9333ea, #fb923c)",
+                    borderRadius: "50%",
+                    padding: "1.5px",
+                  }}
+                >
+                  <div className="w-full h-full rounded-full bg-white" />
+                </div>
               )}
+
+              <button
+                className={cn(
+                  "relative flex items-center justify-center p-2.5 rounded-full cursor-pointer transition-all duration-500 z-10",
+                  "bg-gradient-to-r from-orange-400 via-pink-500 to-purple-600",
+                  "hover:shadow-lg hover:shadow-pink-500/30",
+                  className
+                )}
+              >
+                <BsStars className="w-5 h-5 text-white" />
+
+                {/* Notification dot for hints */}
+                {hasHint && !isOpen && (
+                  <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-amber-400 rounded-full border-2 border-white animate-bounce" />
+                )}
+              </button>
             </div>
-            <button
-              onClick={() => setShowSettings(true)}
-              className="p-1 rounded hover:bg-slate-100 transition-colors"
-              aria-label="Settings"
-            >
-              <Settings className="w-4 h-4 text-slate-500" />
-            </button>
-          </div>
+          </PopoverTrigger>
 
-          {/* Tab Navigation */}
-          <div className="flex border-b border-slate-200">
-            <button
-              onClick={() => setActiveTab("hint")}
-              className={cn(
-                "flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors",
-                activeTab === "hint"
-                  ? "text-indigo-600 border-b-2 border-indigo-500"
-                  : "text-slate-500 hover:text-slate-700"
-              )}
-            >
-              <Lightbulb className="w-3.5 h-3.5" />
-              Hints
-              {hasHint && activeTab !== "hint" && (
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab("steps")}
-              className={cn(
-                "flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors",
-                activeTab === "steps"
-                  ? "text-indigo-600 border-b-2 border-indigo-500"
-                  : "text-slate-500 hover:text-slate-700"
-              )}
-            >
-              <ListChecks className="w-3.5 h-3.5" />
-              Steps
-            </button>
-            <button
-              onClick={() => setActiveTab("resources")}
-              className={cn(
-                "flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors",
-                activeTab === "resources"
-                  ? "text-indigo-600 border-b-2 border-indigo-500"
-                  : "text-slate-500 hover:text-slate-700"
-              )}
-            >
-              <BookOpen className="w-3.5 h-3.5" />
-              Resources
-            </button>
-          </div>
+          <PopoverContent
+            align="end"
+            className="w-80 p-0 border border-slate-200 bg-white shadow-lg animate-in slide-in-from-top-2 duration-200"
+            sideOffset={8}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200">
+              <div className="flex items-center gap-2">
+                <BsStars className="w-4 h-4 text-pink-600" />
+                <span className="text-sm font-semibold text-slate-800">
+                  AI Tutor
+                </span>
+                {isAnalyzing && (
+                  <span className="flex items-center gap-1 text-xs text-slate-500">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Analyzing...
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => setShowSettings(true)}
+                className="p-1 rounded hover:bg-slate-100 transition-colors"
+                aria-label="Settings"
+              >
+                <Settings className="w-4 h-4 text-slate-500" />
+              </button>
+            </div>
 
-          {/* Content */}
-          <ScrollArea className="max-h-80">
-            <div className="p-4">{renderTabContent()}</div>
-          </ScrollArea>
-        </PopoverContent>
-      </Popover>
+            {/* Tab Navigation */}
+            <div className="flex border-b border-slate-200">
+              <button
+                onClick={() => setActiveTab("hint")}
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors",
+                  activeTab === "hint"
+                    ? "text-indigo-600 border-b-2 border-indigo-500"
+                    : "text-slate-500 hover:text-slate-700"
+                )}
+              >
+                <Lightbulb className="w-3.5 h-3.5" />
+                Hints
+                {hasHint && activeTab !== "hint" && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                )}
+              </button>
+              <button
+                onClick={() => setActiveTab("steps")}
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors",
+                  activeTab === "steps"
+                    ? "text-indigo-600 border-b-2 border-indigo-500"
+                    : "text-slate-500 hover:text-slate-700"
+                )}
+              >
+                <ListChecks className="w-3.5 h-3.5" />
+                Steps
+                {hasSteps && activeTab !== "steps" && (
+                  <span className="text-[10px] px-1 py-0.5 rounded bg-indigo-100 text-indigo-600">
+                    {guidedSteps.length}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setActiveTab("resources")}
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors",
+                  activeTab === "resources"
+                    ? "text-indigo-600 border-b-2 border-indigo-500"
+                    : "text-slate-500 hover:text-slate-700"
+                )}
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                Resources
+                {hasResources && activeTab !== "resources" && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                )}
+              </button>
+            </div>
+
+            {/* Content */}
+            <ScrollArea className="max-h-80">
+              <div className="p-4">{renderTabContent()}</div>
+            </ScrollArea>
+          </PopoverContent>
+        </Popover>
+      </div>
 
       {/* Settings Modal */}
       <TutorSettings

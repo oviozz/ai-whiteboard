@@ -4,440 +4,663 @@ import React, {
   useState,
   useRef,
   useEffect,
-  useTransition,
-  useMemo,
   useCallback,
+  useMemo,
 } from "react";
-import { Send, Bot, Loader, ChevronRight, Trash2 } from "lucide-react";
-import { BsStars } from "react-icons/bs";
-import ChatbotSuggestion from "@/app/(main)/whiteboard/[id]/_components/sidebar-chatbot/chatbot-suggestion";
-import { useMutation, useQuery, useAction } from "convex/react";
-import { api } from "../../../../../../../convex/_generated/api";
-import { Id } from "../../../../../../../convex/_generated/dataModel";
-import { cn, timeAgo } from "@/lib/utils";
-import MarkdownRenderer from "@/components/markdown-renderer";
+import {
+  Send,
+  Plus,
+  X,
+  Sparkles,
+  ChevronLeft,
+  ChevronDown,
+  MousePointer2,
+  Crosshair,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useTldrawScreenshot } from "@/hooks/use-tldraw-screenshot";
 import { useTldrawEditor } from "@/contexts/tldraw-editor-context";
-import { executeWhiteboardAction } from "@/lib/tldraw-actions";
-import type { WhiteboardAction } from "@/lib/tldraw-actions";
+import {
+  createAgentExecutor,
+  getCanvasContext,
+  isCanvasAction,
+  type AgentAction,
+  type Streaming,
+  type ChatHistoryItem,
+  type ChatHistoryActionItem,
+  type ChatHistoryPromptItem,
+} from "@/lib/agent";
+import { ChatHistory } from "./chat-history";
+import { Id } from "../../../../../../../convex/_generated/dataModel";
+import type { RecordsDiff, TLRecord, TLShapeId } from "tldraw";
+import { reverseRecordsDiff } from "tldraw";
+
+// Model options - matching the API route
+const AVAILABLE_MODELS = [
+  {
+    id: "google/gemini-2.0-flash",
+    name: "Gemini 2.0 Flash",
+    provider: "Google",
+  },
+  { id: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro", provider: "Google" },
+  {
+    id: "anthropic/claude-sonnet-4.5",
+    name: "Claude Sonnet 4.5",
+    provider: "Anthropic",
+  },
+  { id: "openai/gpt-4o-mini", name: "GPT-4o Mini", provider: "OpenAI" },
+] as const;
+
+type ModelId = (typeof AVAILABLE_MODELS)[number]["id"];
 
 type ChatbotSheetProps = {
   whiteboardID: Id<"whiteboards">;
+  isOpen: boolean;
+  onToggle: () => void;
 };
 
-function SidebarChatbot({ whiteboardID }: ChatbotSheetProps) {
+function SidebarChatbot({
+  whiteboardID: _whiteboardID,
+  isOpen,
+  onToggle,
+}: ChatbotSheetProps) {
   const { editor } = useTldrawEditor();
-  const { captureScreenshot, isReady: isScreenshotReady } =
-    useTldrawScreenshot();
-  const [isSendingUserMessage, startSendingUserMessage] = useTransition();
+  const { captureScreenshot } = useTldrawScreenshot();
 
-  const messages = useQuery(api.whiteboardChatBot.getAllMessages, {
-    whiteboardID,
-  });
-  const userSendMessage = useMutation(api.whiteboardChatBot.sendMessage);
-  const generateAIResponseAction = useAction(api.ai.generateResponse);
-
+  // Chat state
   const [inputValue, setInputValue] = useState("");
-  const [isOpen, setIsOpen] = useState(false);
-  const [activeBotMessageId, setActiveBotMessageId] =
-    useState<Id<"whiteboardChatBot"> | null>(null);
-  const [errorFromAI, setErrorFromAI] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [chatHistory, setChatHistory] = useState<ChatHistoryItem[]>([]);
 
+  // Model selection
+  const [selectedModel, setSelectedModel] = useState<ModelId>(
+    "google/gemini-2.0-flash"
+  );
+  const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
+
+  // Selection context
+  const [useSelection, setUseSelection] = useState(false);
+  const [selectedShapeIds, setSelectedShapeIds] = useState<string[]>([]);
+
+  // Agent executor
+  const agentExecutorRef = useRef<ReturnType<
+    typeof createAgentExecutor
+  > | null>(null);
+
+  // Refs
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
-  const generateUploadUrlMutation = useMutation(
-    api.whiteboardActions.generateUploadUrl
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const modelDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  // Get selected model details
+  const currentModel = useMemo(
+    () =>
+      AVAILABLE_MODELS.find((m) => m.id === selectedModel) ||
+      AVAILABLE_MODELS[0],
+    [selectedModel]
   );
 
-  const removeAllChatMessages = useMutation(
-    api.whiteboardChatBot.deleteAllWhiteboardMessages
-  );
-
-  const isGeneratingResponse = useMemo(() => {
-    if (!activeBotMessageId) return false;
-    const activeBotMessage = messages?.find(
-      (m) => m._id === activeBotMessageId
-    );
-    if (activeBotMessage) {
-      if (activeBotMessage.text === "...") return true;
-      if (errorFromAI && activeBotMessage.text === errorFromAI) return false;
-      return false;
+  // Initialize agent executor when editor is available
+  useEffect(() => {
+    if (editor) {
+      agentExecutorRef.current = createAgentExecutor(editor);
     }
-    return true;
-  }, [activeBotMessageId, messages, errorFromAI]);
+  }, [editor]);
 
-  // Handle AI whiteboard actions from messages
-  const handleWhiteboardAction = useCallback(
-    (action: WhiteboardAction) => {
-      if (!editor) {
-        toast.error("Whiteboard not ready");
-        return;
+  // Track selection changes from canvas
+  useEffect(() => {
+    if (!editor) return;
+
+    const updateSelection = () => {
+      const selected = editor.getSelectedShapeIds();
+      setSelectedShapeIds(selected.map((id) => id.toString()));
+    };
+
+    // Initial update
+    updateSelection();
+
+    // Listen for selection changes
+    const unsubscribe = editor.store.listen(updateSelection, {
+      source: "user",
+      scope: "session",
+    });
+
+    return () => unsubscribe();
+  }, [editor]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        modelDropdownRef.current &&
+        !modelDropdownRef.current.contains(e.target as Node)
+      ) {
+        setIsModelDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Cancel any ongoing request on unmount
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
+
+  // Handle accepting an action (re-apply if previously rejected)
+  const handleAcceptAction = useCallback(
+    (item: ChatHistoryActionItem) => {
+      if (!editor) return;
+
+      const action = item.action;
+      if (!isCanvasAction(action)) return;
+
+      if (item.acceptance === "rejected" && item.diff) {
+        editor.store.applyDiff(item.diff as RecordsDiff<TLRecord>);
       }
 
-      try {
-        executeWhiteboardAction(editor, action);
-        toast.success(
-          `Added ${action.type === "addProblem" ? "problem" : "content"} to whiteboard`
-        );
-      } catch (error) {
-        console.error("Failed to execute whiteboard action:", error);
-        toast.error("Failed to add content to whiteboard");
-      }
+      setChatHistory((prev) =>
+        prev.map((i) =>
+          i === item ? { ...i, acceptance: "accepted" as const } : i
+        )
+      );
     },
     [editor]
   );
 
-  // Parse AI response for whiteboard triggers
-  const parseResponseForWhiteboardAction = useCallback(
-    (text: string): WhiteboardAction | null => {
-      const triggers = [
-        "I'll add this problem to your whiteboard:",
-        "I'll add this to your whiteboard:",
-        "Adding to your whiteboard:",
-        "Here's the problem for your whiteboard:",
-      ];
+  // Handle rejecting an action (undo using diff)
+  const handleRejectAction = useCallback(
+    (item: ChatHistoryActionItem) => {
+      if (!editor) return;
 
-      for (const trigger of triggers) {
-        if (text.toLowerCase().includes(trigger.toLowerCase())) {
-          const content = text.split(trigger)[1]?.trim();
-          if (content) {
-            return {
-              type: "addProblem",
-              content,
-            };
-          }
-        }
+      if (item.acceptance !== "rejected" && item.diff) {
+        const reverseDiff = reverseRecordsDiff(
+          item.diff as RecordsDiff<TLRecord>
+        );
+        editor.store.applyDiff(reverseDiff);
       }
 
-      return null;
+      setChatHistory((prev) =>
+        prev.map((i) =>
+          i === item ? { ...i, acceptance: "rejected" as const } : i
+        )
+      );
     },
-    []
+    [editor]
   );
 
-  // Watch for completed AI messages and check for whiteboard actions
-  useEffect(() => {
-    if (!activeBotMessageId || !messages) return;
+  // Stream agent response from API
+  const streamAgentResponse = useCallback(
+    async (message: string) => {
+      if (!editor) return;
 
-    const activeBotMessage = messages.find((m) => m._id === activeBotMessageId);
-    if (
-      activeBotMessage &&
-      activeBotMessage.text !== "..." &&
-      activeBotMessage.isBot
-    ) {
-      // Check if the message contains a whiteboard action trigger
-      const action = parseResponseForWhiteboardAction(activeBotMessage.text);
-      if (action) {
-        // Small delay to let the message render first
-        setTimeout(() => {
-          handleWhiteboardAction(action);
-        }, 500);
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = new AbortController();
+
+      setIsGenerating(true);
+
+      const executedActions = new Set<string>();
+      const createdShapeIds: string[] = []; // Track shapes created during this session
+
+      // Build message with selection context if enabled
+      let finalMessage = message;
+      if (useSelection && selectedShapeIds.length > 0) {
+        finalMessage = `[Context: User has selected ${selectedShapeIds.length} shape(s): ${selectedShapeIds.join(", ")}]\n\n${message}`;
       }
-    }
-  }, [
-    messages,
-    activeBotMessageId,
-    parseResponseForWhiteboardAction,
-    handleWhiteboardAction,
-  ]);
 
-  const handleSendMessage = async () => {
-    if (inputValue.trim() === "" || !whiteboardID) return;
+      const promptItem: ChatHistoryPromptItem = {
+        type: "prompt",
+        message: finalMessage,
+        timestamp: Date.now(),
+      };
+      setChatHistory((prev) => [...prev, promptItem]);
 
-    const currentUserMessage = inputValue;
-    setInputValue("");
-    setErrorFromAI(null);
+      try {
+        const context = getCanvasContext(editor);
+        const viewport = editor.getViewportPageBounds();
 
-    startSendingUserMessage(async () => {
-      await userSendMessage({
-        whiteboardID,
-        text: currentUserMessage,
-      });
-    });
+        let screenshotBase64: string | undefined;
+        try {
+          const blob = await captureScreenshot();
+          if (blob) {
+            const reader = new FileReader();
+            screenshotBase64 = await new Promise((resolve) => {
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.readAsDataURL(blob);
+            });
+          }
+        } catch (e) {
+          console.warn("Screenshot capture failed:", e);
+        }
 
-    setActiveBotMessageId(null);
-    try {
-      // Use tldraw's native screenshot capture
-      const screenshot_blob = await captureScreenshot();
-
-      let storageId: Id<"_storage"> | undefined;
-
-      if (screenshot_blob) {
-        const uploadUrl = await generateUploadUrlMutation();
-        const uploadResult = await fetch(uploadUrl, {
+        const response = await fetch("/api/whiteboard/agent", {
           method: "POST",
-          body: screenshot_blob,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: finalMessage,
+            shapes: context.shapes,
+            selectedShapes: useSelection
+              ? selectedShapeIds
+              : context.selectedShapeIds,
+            viewportBounds: {
+              x: viewport.x,
+              y: viewport.y,
+              w: viewport.w,
+              h: viewport.h,
+            },
+            screenshot: screenshotBase64,
+            whiteboardTopic: "Physics/Math Problems",
+            model: selectedModel,
+          }),
+          signal: abortControllerRef.current.signal,
         });
 
-        if (!uploadResult.ok)
-          throw new Error(`Upload failed: ${uploadResult.statusText}`);
-        const uploadData = await uploadResult.json();
-        storageId = uploadData.storageId;
-      }
+        if (!response.ok) {
+          throw new Error(`API error: ${response.status}`);
+        }
 
-      const result = await generateAIResponseAction({
-        whiteboardID,
-        userMessage: currentUserMessage,
-        ...(storageId && { storageID: storageId }),
-      });
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("No response body");
 
-      if (result && result.success && result.botMessageId) {
-        setActiveBotMessageId(result.botMessageId as Id<"whiteboardChatBot">);
-      } else {
-        console.error("Error initiating AI response:", result?.error);
-        setErrorFromAI(
-          result?.error || "Failed to start AI response. Please try again."
-        );
-        setActiveBotMessageId(null);
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            const match = line.match(/^data: (.+)$/m);
+            if (match) {
+              const data = match[1];
+              if (data === "[DONE]") continue;
+
+              try {
+                const action: Streaming<AgentAction> = JSON.parse(data);
+
+                if ("error" in action) {
+                  throw new Error((action as { error: string }).error);
+                }
+
+                const actionItem: ChatHistoryActionItem = {
+                  type: "action",
+                  action,
+                  acceptance: "accepted",
+                };
+
+                setChatHistory((prev) => {
+                  const lastItem = prev.at(-1);
+                  if (
+                    lastItem?.type === "action" &&
+                    !lastItem.action.complete &&
+                    lastItem.action._type === action._type
+                  ) {
+                    return [...prev.slice(0, -1), actionItem];
+                  }
+                  return [...prev, actionItem];
+                });
+
+                if (
+                  isCanvasAction(action) &&
+                  action.complete &&
+                  agentExecutorRef.current
+                ) {
+                  let actionKey = `${action._type}-${Date.now()}`;
+                  if (action._type === "create") {
+                    actionKey = `${action._type}-${action.shape?.shapeId || "intent" in action ? (action as { intent?: string }).intent : Date.now()}`;
+                    // Track created shape IDs for zooming later
+                    if (action.shape?.shapeId) {
+                      createdShapeIds.push(`shape:${action.shape.shapeId}`);
+                    }
+                  } else if ("intent" in action) {
+                    actionKey = `${action._type}-${(action as { intent: string }).intent}`;
+                  }
+
+                  if (!executedActions.has(actionKey)) {
+                    executedActions.add(actionKey);
+
+                    let diff: RecordsDiff<TLRecord> | undefined;
+                    const executor = agentExecutorRef.current;
+
+                    diff = editor.store.extractingChanges(() => {
+                      const result = executor.executeAction(action);
+                      if (!result.success) {
+                        console.warn("Action execution failed:", result.error);
+                      }
+                    });
+
+                    if (diff) {
+                      setChatHistory((prev) => {
+                        const lastItem = prev.at(-1);
+                        if (
+                          lastItem?.type === "action" &&
+                          lastItem.action._type === action._type
+                        ) {
+                          return [
+                            ...prev.slice(0, -1),
+                            { ...lastItem, diff } as ChatHistoryActionItem,
+                          ];
+                        }
+                        return prev;
+                      });
+                    }
+                  }
+                }
+              } catch (e) {
+                console.error("Failed to parse action:", e);
+              }
+            }
+          }
+        }
+        // After streaming completes, zoom to the created shapes
+        if (createdShapeIds.length > 0) {
+          // Small delay to ensure all shapes are rendered
+          setTimeout(() => {
+            try {
+              // Get bounds of all created shapes
+              const shapes = createdShapeIds
+                .map((id) => editor.getShape(id as TLShapeId))
+                .filter((s): s is NonNullable<typeof s> => s !== undefined);
+
+              if (shapes.length > 0) {
+                // Calculate combined bounds
+                let minX = Infinity,
+                  minY = Infinity,
+                  maxX = -Infinity,
+                  maxY = -Infinity;
+
+                for (const shape of shapes) {
+                  const bounds = editor.getShapePageBounds(shape.id);
+                  if (bounds) {
+                    minX = Math.min(minX, bounds.x);
+                    minY = Math.min(minY, bounds.y);
+                    maxX = Math.max(maxX, bounds.x + bounds.w);
+                    maxY = Math.max(maxY, bounds.y + bounds.h);
+                  }
+                }
+
+                // Add some padding around the content
+                const padding = 100;
+                const zoomBounds = {
+                  x: minX - padding,
+                  y: minY - padding,
+                  w: maxX - minX + padding * 2,
+                  h: maxY - minY + padding * 2,
+                };
+
+                // Zoom to the bounds with animation
+                editor.zoomToBounds(zoomBounds, {
+                  inset: 50,
+                  animation: { duration: 400 },
+                });
+              }
+            } catch (e) {
+              console.warn("Failed to zoom to created shapes:", e);
+            }
+          }, 200);
+        }
+      } catch (error) {
+        if ((error as Error).name === "AbortError") {
+          console.log("Request cancelled");
+          return;
+        }
+        console.error("Stream error:", error);
+        toast.error("Failed to get AI response");
+      } finally {
+        setIsGenerating(false);
+        abortControllerRef.current = null;
+        setUseSelection(false); // Reset selection after sending
       }
-    } catch (error: unknown) {
-      const errorMessage =
-        error instanceof Error
-          ? error.message
-          : "A network error occurred. Please try again.";
-      console.error("Client-side error calling AI action:", error);
-      setErrorFromAI(errorMessage);
-      setActiveBotMessageId(null);
+    },
+    [editor, captureScreenshot, selectedModel, useSelection, selectedShapeIds]
+  );
+
+  const handleSendMessage = useCallback(async () => {
+    const message = inputValue.trim();
+    if (!message) {
+      if (isGenerating) {
+        abortControllerRef.current?.abort();
+        setIsGenerating(false);
+      }
+      return;
     }
-  };
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    setInputValue("");
+    await streamAgentResponse(message);
+  }, [inputValue, isGenerating, streamAgentResponse]);
 
+  const handleNewChat = useCallback(() => {
+    abortControllerRef.current?.abort();
+    setChatHistory([]);
+    setIsGenerating(false);
+  }, []);
+
+  // Focus input when panel opens
   useEffect(() => {
-    if (isOpen && !isGeneratingResponse && !isSendingUserMessage) {
+    if (isOpen && !isGenerating) {
       textAreaRef.current?.focus();
     }
-  }, [isOpen, isGeneratingResponse, isSendingUserMessage]);
+  }, [isOpen, isGenerating]);
 
-  useEffect(() => {
-    if (errorFromAI && !activeBotMessageId && messages) {
-      console.warn("AI Initiation Error:", errorFromAI);
+  // Toggle selection context
+  const handleToggleSelection = useCallback(() => {
+    if (selectedShapeIds.length === 0) {
+      toast.info("Select shapes on the canvas first");
+      return;
     }
-  }, [errorFromAI, activeBotMessageId, messages]);
+    setUseSelection((prev) => !prev);
+  }, [selectedShapeIds.length]);
 
   return (
     <>
-      {/* Tab sticking to right wall */}
+      {/* Toggle Tab */}
       <button
-        onClick={() => setIsOpen(true)}
+        onClick={onToggle}
         className={cn(
-          "fixed right-0 top-1/2 -translate-y-1/2 z-40",
-          "flex items-center gap-1.5 pl-2.5 pr-3 py-3",
-          "text-slate-600 hover:text-blue-600",
-          "bg-white border border-r-0 border-slate-200",
-          "rounded-l-lg transition-all duration-200",
+          "fixed top-1/2 -translate-y-1/2 z-50",
+          "flex items-center gap-2 px-3 py-4",
+          "bg-white border border-slate-200",
+          "rounded-l-xl transition-all duration-300",
           "hover:bg-slate-50",
-          isOpen ? "translate-x-full opacity-0" : "translate-x-0 opacity-100"
+          isOpen ? "right-[400px] border-r-0" : "right-0 border-r-0"
         )}
+        title={isOpen ? "Close Assistant" : "Open Assistant"}
       >
-        <BsStars className="w-4 h-4 text-blue-500 flex-shrink-0" />
-        <span className="text-xs font-medium writing-mode-vertical whitespace-nowrap">
-          Need Help?
-        </span>
+        {isOpen ? (
+          <ChevronLeft className="w-4 h-4 text-slate-500 rotate-180" />
+        ) : (
+          <>
+            <Sparkles className="w-5 h-5 text-orange-500" />
+            <span className="text-sm font-medium text-slate-700 whitespace-nowrap">
+              AI
+            </span>
+          </>
+        )}
       </button>
 
-      {/* Sidebar Panel */}
+      {/* Sidebar Panel - Fixed position, full height */}
       <div
         className={cn(
-          "fixed top-0 right-0 h-full z-50",
-          "flex flex-col bg-white border-l border-slate-200",
-          "transition-transform duration-300 ease-out",
-          isOpen ? "translate-x-0" : "translate-x-full",
-          "w-[380px] max-w-[90vw]"
+          "fixed top-0 right-0 h-screen bg-white border-l border-slate-200 z-40",
+          "flex flex-col transition-transform duration-300 ease-out",
+          "w-[400px]",
+          isOpen ? "translate-x-0" : "translate-x-full"
         )}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
-              <Bot className="w-4 h-4 text-white" />
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 flex-shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center">
+              <Sparkles className="w-4 h-4 text-white" />
             </div>
-            <div>
-              <h2 className="font-semibold text-slate-800 text-sm">
-                AI Assistant
-              </h2>
-              {!isScreenshotReady && (
-                <span className="text-xs text-slate-400">Loading...</span>
-              )}
-            </div>
+            <h2 className="font-semibold text-slate-800 text-sm">
+              AI Assistant
+            </h2>
           </div>
 
           <div className="flex items-center gap-1">
             <button
               type="button"
-              onClick={async () => {
-                if (whiteboardID) {
-                  const { success, message } = await removeAllChatMessages({
-                    whiteboardID,
-                  });
-                  if (success) {
-                    toast.success(message);
-                    setActiveBotMessageId(null);
-                  }
-                }
-              }}
-              className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-              title="Clear chat"
+              onClick={handleNewChat}
+              className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+              title="New chat"
             >
-              <Trash2 className="w-4 h-4" />
+              <Plus className="w-4 h-4" />
             </button>
             <button
               type="button"
-              onClick={() => setIsOpen(false)}
+              onClick={onToggle}
               className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
               title="Close"
             >
-              <ChevronRight className="w-5 h-5" />
+              <X className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 hide-scrollbar bg-slate-50">
-          {messages && messages.length === 0 && !isGeneratingResponse && (
-            <div className="text-center py-12">
-              <div className="w-14 h-14 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                <BsStars className="w-7 h-7 text-blue-500" />
-              </div>
-              <h3 className="font-medium text-slate-700 mb-1">
-                How can I help?
-              </h3>
-              <p className="text-sm text-slate-500">
-                Ask me anything about your whiteboard!
-              </p>
-            </div>
-          )}
-          {messages?.map((message) => (
-            <div
-              key={message._id}
-              className={cn(
-                "flex flex-col gap-1 w-full overflow-x-hidden",
-                message.isBot ? "items-start" : "items-end"
-              )}
-            >
-              <div
-                className={cn(
-                  "flex gap-2 items-end max-w-[85%]",
-                  message.isBot ? "flex-row" : "flex-row-reverse"
-                )}
-              >
-                {message.isBot && (
-                  <div className="flex-shrink-0 h-6 w-6 bg-blue-500 text-white rounded-full flex items-center justify-center self-start">
-                    <Bot size={12} />
-                  </div>
-                )}
-                <div
-                  className={cn(
-                    "p-3 rounded-2xl text-sm break-words",
-                    message.isBot
-                      ? "bg-white text-slate-700 rounded-bl-md border border-slate-100"
-                      : "bg-blue-500 text-white rounded-br-md"
-                  )}
-                >
-                  <MarkdownRenderer
-                    content={
-                      message.text === "..." &&
-                      isGeneratingResponse &&
-                      message._id === activeBotMessageId
-                        ? "Thinking..."
-                        : message.text
-                    }
-                  />
-                  {message.isBot &&
-                    isGeneratingResponse &&
-                    message._id === activeBotMessageId &&
-                    message.text === "..." && (
-                      <Loader className="h-4 w-4 animate-spin inline-block ml-1.5 text-blue-400 mt-1" />
-                    )}
-                </div>
-              </div>
-              <span
-                className={cn(
-                  "text-xs text-slate-400 px-1 mt-0.5",
-                  message.isBot ? "ml-8" : "mr-1"
-                )}
-              >
-                {timeAgo(message.createdAt)}
-              </span>
-            </div>
-          ))}
-          {errorFromAI && !activeBotMessageId && (
-            <div className="text-center text-red-500 text-sm py-2 px-3 bg-red-50 rounded-lg">
-              {errorFromAI}
-            </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
+        {/* Chat History */}
+        <ChatHistory
+          items={chatHistory}
+          isGenerating={isGenerating}
+          onAccept={handleAcceptAction}
+          onReject={handleRejectAction}
+        />
 
         {/* Input Area */}
-        <div className="p-4 border-t border-slate-100 bg-white">
-          <div className="flex items-end gap-2 bg-slate-50 rounded-2xl px-4 py-2 border border-slate-100">
+        <div className="p-3 border-t border-slate-200 bg-slate-50 flex-shrink-0">
+          {/* Context buttons */}
+          <div className="flex items-center gap-2 mb-3">
+            <button
+              type="button"
+              onClick={handleToggleSelection}
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium transition-colors border",
+                useSelection && selectedShapeIds.length > 0
+                  ? "bg-orange-50 text-orange-600 border-orange-200"
+                  : selectedShapeIds.length > 0
+                    ? "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                    : "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+              )}
+              disabled={selectedShapeIds.length === 0}
+            >
+              <MousePointer2 className="w-3.5 h-3.5" />
+              Selection
+              {selectedShapeIds.length > 0 && (
+                <span className="bg-slate-200 text-slate-600 px-1.5 rounded-full text-[10px]">
+                  {selectedShapeIds.length}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors"
+              onClick={() => toast.info("Context picker coming soon!")}
+            >
+              <Crosshair className="w-3.5 h-3.5" />
+              Add Context
+            </button>
+          </div>
+
+          {/* Input box */}
+          <div className="bg-white rounded-xl border border-slate-200 focus-within:border-slate-300 transition-colors">
             <textarea
               ref={textAreaRef}
-              className="flex-1 bg-transparent outline-none resize-none text-sm leading-relaxed max-h-24 hide-scrollbar py-1"
+              className="w-full bg-transparent outline-none resize-none text-sm leading-relaxed p-3 text-slate-700 placeholder:text-slate-400 min-h-[100px]"
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               placeholder={
-                isGeneratingResponse ? "AI is thinking..." : "Ask anything..."
+                isGenerating ? "Generating..." : "Ask, learn, brainstorm, draw"
               }
-              rows={1}
+              rows={4}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
-                  if (
-                    inputValue.trim() !== "" &&
-                    !isSendingUserMessage &&
-                    !isGeneratingResponse
-                  ) {
-                    handleSendMessage();
-                  }
+                  handleSendMessage();
                 }
               }}
-              disabled={isSendingUserMessage || isGeneratingResponse}
             />
+          </div>
+
+          {/* Bottom bar with model selector and send button */}
+          <div className="flex items-center justify-between mt-3">
+            {/* Model selector dropdown */}
+            <div className="relative" ref={modelDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
+                className="flex items-center gap-1.5 px-2 py-1.5 text-xs text-slate-500 hover:text-slate-700 hover:bg-white rounded-lg border border-transparent hover:border-slate-200 transition-colors"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span className="max-w-[140px] truncate">
+                  {currentModel.name}
+                </span>
+                <ChevronDown
+                  className={cn(
+                    "w-3.5 h-3.5 transition-transform",
+                    isModelDropdownOpen && "rotate-180"
+                  )}
+                />
+              </button>
+
+              {/* Dropdown menu - opens upward */}
+              {isModelDropdownOpen && (
+                <div className="absolute bottom-full left-0 mb-2 w-56 bg-white rounded-xl border border-slate-200 shadow-xl py-1 z-[100]">
+                  {AVAILABLE_MODELS.map((model) => (
+                    <button
+                      key={model.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedModel(model.id);
+                        setIsModelDropdownOpen(false);
+                      }}
+                      className={cn(
+                        "w-full flex items-center justify-between px-3 py-2.5 text-left text-sm hover:bg-slate-50 transition-colors",
+                        selectedModel === model.id
+                          ? "text-orange-600 bg-orange-50"
+                          : "text-slate-700"
+                      )}
+                    >
+                      <span>{model.name}</span>
+                      <span className="text-xs text-slate-400">
+                        {model.provider}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Send button */}
             <button
               type="button"
               className={cn(
-                "p-2 rounded-xl transition-colors",
-                inputValue.trim() &&
-                  !isSendingUserMessage &&
-                  !isGeneratingResponse
-                  ? "bg-blue-500 text-white hover:bg-blue-600"
-                  : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                "p-2.5 rounded-xl transition-colors",
+                inputValue.trim() || isGenerating
+                  ? "bg-orange-500 text-white hover:bg-orange-600"
+                  : "bg-slate-200 text-slate-400"
               )}
-              disabled={
-                inputValue.trim() === "" ||
-                isSendingUserMessage ||
-                isGeneratingResponse
-              }
+              disabled={!inputValue.trim() && !isGenerating}
               onClick={handleSendMessage}
-              aria-label="Send message"
+              aria-label={isGenerating ? "Cancel" : "Send message"}
             >
-              {isSendingUserMessage ||
-              (isGeneratingResponse && activeBotMessageId) ? (
-                <Loader className="w-4 h-4 animate-spin" />
+              {isGenerating ? (
+                <div className="w-4 h-4 flex items-center justify-center">
+                  <span className="text-xs font-bold">■</span>
+                </div>
               ) : (
                 <Send className="w-4 h-4" />
               )}
             </button>
           </div>
-          <div className="mt-3">
-            <ChatbotSuggestion
-              onClickSuggestion={(val) => setInputValue(val)}
-            />
-          </div>
         </div>
       </div>
-
-      {/* Backdrop */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 bg-black/20 z-40 transition-opacity"
-          onClick={() => setIsOpen(false)}
-        />
-      )}
     </>
   );
 }

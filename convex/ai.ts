@@ -325,6 +325,27 @@ export const _updateBotMessageChunk = internalMutation({
 // Proactive Tutor Analysis
 // ============================================
 
+export type GuidedStep = {
+    stepNumber: number;
+    instruction: string;
+    hint?: string;
+};
+
+export type VideoSuggestion = {
+    title: string;
+    description: string;
+    searchQuery: string;
+    relevanceReason: string;
+};
+
+export type WebResource = {
+    title: string;
+    type: "khan_academy" | "wikipedia" | "interactive_tool" | "article" | "other";
+    url?: string;
+    searchQuery: string;
+    description: string;
+};
+
 export type AnalysisResult = {
     status: "correct" | "on_track" | "stuck" | "wrong" | "empty";
     confidence: number; // 0-1
@@ -332,6 +353,10 @@ export type AnalysisResult = {
     detailedGuidance?: string; // Longer guidance for floating bubble
     hintType: "quick" | "detailed" | "none";
     suggestedAction?: "encourage" | "hint" | "guide" | "wait";
+    // New: rich content for helping students
+    guidedSteps?: GuidedStep[];
+    videoSuggestions?: VideoSuggestion[];
+    webResources?: WebResource[];
 };
 
 export const analyzeWhiteboardProgress = action({
@@ -384,9 +409,9 @@ export const analyzeWhiteboardProgress = action({
             }
 
             const systemPrompt = `You are an expert educational tutor analyzing a student's work on a whiteboard. Your job is to:
-1. Assess if they're on the right track
+1. Carefully check ALL mathematical calculations, equations, and logical steps for errors
 2. Identify if they're stuck or making mistakes
-3. Provide helpful, encouraging guidance
+3. Provide helpful, encouraging guidance with hints when needed
 
 **Context:**
 - Topic: ${topic}
@@ -394,32 +419,52 @@ ${problem_statement ? `- Problem/Focus: ${problem_statement}` : ""}
 - Student activity: ${activityState} (idle for ${Math.round(idleTimeMs / 1000)}s)
 ${documentContext}
 
+**CRITICAL - Error Detection:**
+- CAREFULLY verify ALL arithmetic: additions, subtractions, multiplications, divisions
+- Check if equations are mathematically correct (e.g., "2+2=5" is WRONG)
+- Look for sign errors, calculation mistakes, wrong formulas
+- If ANY error is found, status MUST be "wrong" and you MUST provide a hint
+
 **Analysis Guidelines:**
-- If the whiteboard is empty or has minimal content, status should be "empty"
-- If work shows correct approach/progress, status is "correct" or "on_track"
-- If there are mistakes or wrong direction, status is "wrong"
-- If student seems stuck (idle + incomplete work), status is "stuck"
+- "empty": Whiteboard is blank or has minimal/irrelevant content
+- "correct": Work is mathematically/logically correct and complete
+- "on_track": Work is partially done but correct so far
+- "wrong": ANY mathematical error, wrong answer, or incorrect step - ALWAYS provide briefHint
+- "stuck": Student seems stuck (idle + incomplete work)
 
 **Response Format (JSON only):**
 {
   "status": "correct" | "on_track" | "stuck" | "wrong" | "empty",
   "confidence": 0.0-1.0,
-  "briefHint": "Very short hint under 15 words for quick display, or null",
-  "detailedGuidance": "More detailed help if needed, 2-3 sentences max, or null",
+  "briefHint": "REQUIRED if status is wrong/stuck. Short hint under 15 words pointing to the issue",
+  "detailedGuidance": "More detailed help, 2-3 sentences max",
   "hintType": "quick" | "detailed" | "none",
-  "suggestedAction": "encourage" | "hint" | "guide" | "wait"
+  "suggestedAction": "encourage" | "hint" | "guide" | "wait",
+  "guidedSteps": [
+    { "stepNumber": 1, "instruction": "Step instruction", "hint": "Optional hint" }
+  ],
+  "videoSuggestions": [
+    { "title": "Video title", "description": "Why helpful", "searchQuery": "YouTube search", "relevanceReason": "Reason" }
+  ],
+  "webResources": [
+    { "title": "Resource name", "type": "khan_academy|wikipedia|interactive_tool|article|other", "searchQuery": "Search query", "description": "What they learn" }
+  ]
 }
 
+**MANDATORY RULES:**
+1. If status is "wrong", hintType MUST be "quick" or "detailed", and briefHint MUST be provided
+2. If status is "stuck", hintType MUST be "quick" or "detailed", and briefHint MUST be provided
+3. For wrong answers, hint should point to WHERE the error is without giving the answer
+4. Example: For "2+2=5", briefHint could be "Check your addition - what is 2+2?"
+
 **Hint Guidelines:**
-- "none": Student doing well, no intervention needed
-- "quick": Small nudge needed (typo, minor error, almost there)
-- "detailed": Student needs more substantial help
+- "none": ONLY when status is "correct", "on_track", or "empty"
+- "quick": For small errors - use for most "wrong" cases
+- "detailed": For bigger conceptual issues
 
 **Important:**
-- Be encouraging, never discouraging
+- Be encouraging but ALWAYS catch errors
 - Don't give away answers - guide toward discovery
-- If empty/minimal work and not much idle time, suggest "wait"
-- Brief hints should be actionable and specific
 - Return ONLY valid JSON, no other text`;
 
             // Convert image to base64 for Gemini compatibility
@@ -567,6 +612,203 @@ export const clearPendingHint = mutation({
         }
 
         return { success: true };
+    },
+});
+
+// ============================================
+// Agent Response - Structured Actions
+// ============================================
+
+export type AgentActionType = 
+  | { type: 'createShape'; shapeType: 'geo' | 'text' | 'note' | 'arrow'; props: Record<string, unknown> }
+  | { type: 'draw'; props: { points: Array<{ x: number; y: number }>; color?: string; size?: string } }
+  | { type: 'deleteShape'; shapeId: string }
+  | { type: 'updateShape'; shapeId: string; props: Record<string, unknown> }
+  | { type: 'highlight'; shapeId: string; style: 'error' | 'success' | 'warning' | 'info' }
+  | { type: 'think'; content: string }
+  | { type: 'message'; content: string };
+
+export type AgentResponseType = {
+  thinking?: string;
+  thinkingDurationMs?: number;
+  actions: AgentActionType[];
+  message: string;
+  requiresApproval?: boolean;
+};
+
+export const generateAgentResponse = action({
+  args: {
+    whiteboardID: v.id("whiteboards"),
+    userMessage: v.string(),
+    canvasContext: v.optional(v.string()),
+    storageID: v.optional(v.id("_storage")),
+  },
+  handler: async (ctx, args): Promise<{ success: boolean; response?: AgentResponseType; botMessageId?: Id<"whiteboardChatBot">; error?: string }> => {
+    const { whiteboardID, userMessage, canvasContext, storageID } = args;
+
+    try {
+      getGatewayClient();
+    } catch (error: any) {
+      return { success: false, error: error.message || "AI service not configured." };
+    }
+
+    // Create a bot message entry for the text response
+    let botMessageId: Id<"whiteboardChatBot">;
+    try {
+      botMessageId = await ctx.runMutation(internal.ai._createBotMessageEntry, {
+        whiteboardID,
+        initialText: "...",
+      });
+    } catch (e: any) {
+      return { success: false, error: "Failed to create message entry." };
+    }
+
+    try {
+      const [whiteboard, history] = await Promise.all([
+        ctx.runQuery(internal.whiteboards.getWhiteboardByID, { whiteboardID }),
+        ctx.runQuery(internal.whiteboardChatBot.getPreviousMessages, {
+          whiteboardID,
+          limit: 5,
+          beforeTimestamp: Date.now() - 1000,
+        })
+      ]);
+
+      if (!whiteboard) {
+        throw new Error("Whiteboard not found");
+      }
+
+      const { topic, problem_statement } = whiteboard;
+
+      // Build history messages
+      const historyMessages: CoreMessage[] = history.map((msg: { isBot: boolean; text: string }) => ({
+        role: msg.isBot ? 'assistant' : 'user' as const,
+        content: msg.text,
+      }));
+
+      // Agent system prompt with action capabilities
+      const systemPrompt = `You are an AI assistant that can see and manipulate a whiteboard canvas. You can:
+1. Create shapes (rectangles, circles, text, notes, arrows)
+2. Draw freehand
+3. Highlight shapes to point out errors or successes
+4. Provide educational guidance
+
+**Context:**
+- Topic: ${topic}
+${problem_statement ? `- Problem: ${problem_statement}` : ""}
+${canvasContext ? `\n**Current Canvas State:**\n${canvasContext}` : ""}
+
+**RESPONSE FORMAT (JSON only):**
+{
+  "thinking": "Your reasoning process - what you're analyzing and why (2-3 sentences)",
+  "actions": [
+    // For drawing shapes:
+    { "type": "createShape", "shapeType": "geo", "props": { "geo": "ellipse", "x": 100, "y": 100, "w": 50, "h": 50, "color": "red", "fill": "none" } },
+    // For text:
+    { "type": "createShape", "shapeType": "text", "props": { "x": 100, "y": 200, "text": "Hello!", "color": "black" } },
+    // For notes:
+    { "type": "createShape", "shapeType": "note", "props": { "x": 100, "y": 300, "text": "Remember this!", "color": "yellow" } },
+    // For arrows:
+    { "type": "createShape", "shapeType": "arrow", "props": { "startX": 100, "startY": 100, "endX": 200, "endY": 200, "color": "black" } },
+    // For highlighting existing shapes:
+    { "type": "highlight", "shapeId": "shape:abc123", "style": "error" }
+  ],
+  "message": "Your response to the user explaining what you did",
+  "requiresApproval": true
+}
+
+**ACTION GUIDELINES:**
+- For "draw a circle": use createShape with geo: "ellipse"
+- For "draw a rectangle": use createShape with geo: "rectangle"
+- For "highlight the error": use highlight with style: "error"
+- For "point to": use createShape with shapeType: "arrow"
+- Colors: "black", "red", "blue", "green", "orange", "yellow", "violet"
+- Set requiresApproval: true for canvas changes (lets user accept/reject)
+- Set requiresApproval: false for just explanations
+
+**IMPORTANT:**
+- Return ONLY valid JSON, no other text
+- Keep thinking brief (2-3 sentences)
+- Keep message concise and helpful
+- Position shapes relative to existing content when possible`;
+
+      // Prepare user content with optional image
+      let userContent: string | Array<TextPart | ImagePart> = userMessage;
+
+      if (storageID) {
+        const imageUrl = await ctx.runQuery(internal.whiteboardActions.getInternalImageUrl, {
+          storageId: storageID,
+        });
+
+        if (imageUrl) {
+          const base64Image = await fetchImageAsBase64(imageUrl);
+          if (base64Image) {
+            userContent = [
+              { type: "text", text: userMessage } as TextPart,
+              { type: "image", image: base64Image } as ImagePart,
+            ];
+          }
+        }
+      }
+
+      const messages: CoreMessage[] = [
+        { role: "system", content: systemPrompt },
+        ...historyMessages,
+        { role: "user", content: userContent },
+      ];
+
+      const startTime = Date.now();
+      const { text } = await generateText({
+        model: getGatewayModel("google/gemini-2.0-flash"),
+        messages,
+      });
+      const thinkingDurationMs = Date.now() - startTime;
+
+      // Parse the response
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        // Fall back to regular text response
+        await ctx.runMutation(internal.ai._updateBotMessageChunk, {
+          messageId: botMessageId,
+          newText: text,
+        });
+        return {
+          success: true,
+          response: {
+            actions: [],
+            message: text,
+            requiresApproval: false,
+          },
+          botMessageId,
+        };
+      }
+
+      const parsed = JSON.parse(jsonMatch[0]) as AgentResponseType;
+      parsed.thinkingDurationMs = thinkingDurationMs;
+
+      // Update bot message with the text response
+      await ctx.runMutation(internal.ai._updateBotMessageChunk, {
+        messageId: botMessageId,
+        newText: parsed.message || "I've prepared some changes for your canvas.",
+      });
+
+      return {
+        success: true,
+        response: parsed,
+        botMessageId,
+      };
+
+    } catch (error: any) {
+      console.error("Agent response error:", error.message);
+      
+      try {
+        await ctx.runMutation(internal.ai._updateBotMessageChunk, {
+          messageId: botMessageId,
+          newText: "Sorry, I encountered an error processing your request.",
+        });
+      } catch {}
+
+      return { success: false, error: error.message };
+    }
     },
 });
 

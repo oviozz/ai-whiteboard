@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { Id } from "../../../../../../convex/_generated/dataModel"
 import { useQuery } from "convex/react"
 import { api } from "../../../../../../convex/_generated/api"
@@ -18,6 +19,9 @@ interface WhiteboardClientProps {
 }
 
 export default function WhiteboardClient({ whiteboardId }: WhiteboardClientProps) {
+  // Sidebar state - controlled here so canvas can resize
+  const [isChatOpen, setIsChatOpen] = useState(false)
+
   // Fetch whiteboard metadata
   const whiteboardData = useQuery(
     api.whiteboards.getWhiteboardID,
@@ -71,8 +75,11 @@ export default function WhiteboardClient({ whiteboardId }: WhiteboardClientProps
           {/* Sidebar with tools */}
           <WhiteboardSidebar whiteboardID={whiteboardId} />
 
-          {/* Canvas area */}
-          <div className="flex flex-1">
+          {/* Canvas area - transitions smoothly when chat opens */}
+          <div 
+            className="flex flex-1 overflow-hidden transition-all duration-300"
+            style={{ marginRight: isChatOpen ? 400 : 0 }}
+          >
             <div
               className="flex-1 relative overflow-hidden"
               style={{ touchAction: "none", backgroundColor: "#ffffff" }}
@@ -88,11 +95,15 @@ export default function WhiteboardClient({ whiteboardId }: WhiteboardClientProps
                 </SolveItAllProvider>
               </ProactiveTutorProvider>
             </div>
-
-            {/* AI Chatbot sidebar */}
-            <SidebarChatbot whiteboardID={whiteboardId} />
           </div>
         </div>
+
+        {/* AI Chatbot sidebar - fixed position, full height */}
+        <SidebarChatbot 
+          whiteboardID={whiteboardId} 
+          isOpen={isChatOpen}
+          onToggle={() => setIsChatOpen(!isChatOpen)}
+        />
       </div>
     </TldrawEditorProvider>
   )

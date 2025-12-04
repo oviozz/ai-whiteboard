@@ -10,7 +10,7 @@ import {
   defaultShapeUtils,
   Editor,
 } from 'tldraw'
-import 'tldraw/tldraw.css'
+// CSS is imported in globals.css or layout
 import { useQuery, useMutation } from 'convex/react'
 import { api } from '../../../../../../convex/_generated/api'
 import { Id } from '../../../../../../convex/_generated/dataModel'
@@ -19,6 +19,29 @@ import { Loader } from 'lucide-react'
 
 interface TldrawCanvasProps {
   whiteboardId: Id<"whiteboards">
+}
+
+// Separate component for the actual Tldraw editor to avoid hooks ordering issues
+function TldrawEditor({ 
+  store, 
+  onMount 
+}: { 
+  store: TLStoreWithStatus & { status: 'synced-remote' }
+  onMount: (editor: Editor) => (() => void) | void
+}) {
+  return (
+    <div className="w-full h-full tldraw-container">
+      <Tldraw
+        store={store}
+        onMount={onMount}
+        autoFocus
+        // Hide the default style panel since we have our own in the sidebar
+        components={{
+          StylePanel: null,
+        }}
+      />
+    </div>
+  )
 }
 
 export default function TldrawCanvas({ whiteboardId }: TldrawCanvasProps) {
@@ -31,19 +54,40 @@ export default function TldrawCanvas({ whiteboardId }: TldrawCanvasProps) {
   
   const saveSnapshot = useMutation(api.whiteboardActions.saveTldrawSnapshot)
   
+  // Refs for stable state tracking - KEY for preventing zoom bug
+  const hasInitializedRef = useRef(false)
+  const editorRef = useRef<Editor | null>(null)
+  const isSavingRef = useRef(false)
+  
   // Refs for debounced saving
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const lastSavedSnapshotRef = useRef<string | null>(null)
+  
+  // Store ref for stable mutation access
+  const saveSnapshotRef = useRef(saveSnapshot)
+  useEffect(() => {
+    saveSnapshotRef.current = saveSnapshot
+  }, [saveSnapshot])
+  
+  // Whiteboard ID ref for stable access in callbacks
+  const whiteboardIdRef = useRef(whiteboardId)
+  useEffect(() => {
+    whiteboardIdRef.current = whiteboardId
+  }, [whiteboardId])
   
   // Store with status for async loading
   const [storeWithStatus, setStoreWithStatus] = useState<TLStoreWithStatus>({
     status: 'loading',
   })
   
-  // Initialize store when data is loaded
+  // Initialize store ONCE when data is first loaded
+  // This is the KEY fix - we only create the store once
   useEffect(() => {
+    // Skip if already initialized - prevents zoom bug on saves
+    if (hasInitializedRef.current) return
+    
     if (whiteboardData === undefined) {
-      // Still loading
+      // Still loading from Convex
       setStoreWithStatus({ status: 'loading' })
       return
     }
@@ -51,12 +95,16 @@ export default function TldrawCanvas({ whiteboardId }: TldrawCanvasProps) {
     if (whiteboardData.status === 'not_found') {
       setStoreWithStatus({ 
         status: 'error', 
-        error: 'Whiteboard not found' 
+        error: new Error('Whiteboard not found')
       })
       return
     }
     
-    // Create store
+    // Mark as initialized BEFORE creating store
+    // This ensures we never run this effect again
+    hasInitializedRef.current = true
+    
+    // Create store only once
     const newStore = createTLStore({
       shapeUtils: defaultShapeUtils,
     })
@@ -80,8 +128,11 @@ export default function TldrawCanvas({ whiteboardId }: TldrawCanvasProps) {
     })
   }, [whiteboardData])
   
-  // Handle editor mount - setup auto-save
+  // Handle editor mount - setup auto-save with stable refs
   const handleMount = useCallback((editor: Editor) => {
+    // Store editor in ref for stable access
+    editorRef.current = editor
+    
     // Store editor in context for other components to use
     setEditor(editor)
     
@@ -93,24 +144,30 @@ export default function TldrawCanvas({ whiteboardId }: TldrawCanvasProps) {
           clearTimeout(saveTimeoutRef.current)
         }
         
-        // Debounce save by 1 second
+        // Debounce save by 2 seconds for better batching
         saveTimeoutRef.current = setTimeout(async () => {
+          // Prevent concurrent saves
+          if (isSavingRef.current) return
+          isSavingRef.current = true
+          
           try {
             const { document } = getSnapshot(editor.store)
             const snapshotString = JSON.stringify(document)
             
             // Only save if different from last saved
             if (snapshotString !== lastSavedSnapshotRef.current) {
-              await saveSnapshot({
-                whiteboardID: whiteboardId,
+              await saveSnapshotRef.current({
+                whiteboardID: whiteboardIdRef.current,
                 snapshot: snapshotString,
               })
               lastSavedSnapshotRef.current = snapshotString
             }
           } catch (error) {
             console.error('Failed to save tldraw snapshot:', error)
+          } finally {
+            isSavingRef.current = false
           }
-        }, 1000)
+        }, 2000)
       },
       { scope: 'document', source: 'user' }
     )
@@ -121,11 +178,13 @@ export default function TldrawCanvas({ whiteboardId }: TldrawCanvasProps) {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current)
       }
+      editorRef.current = null
       setEditor(null)
     }
-  }, [whiteboardId, saveSnapshot, setEditor])
+  // Using refs means we don't need dependencies that would cause re-renders
+  }, [setEditor])
   
-  // Show loading state
+  // Render based on store status
   if (storeWithStatus.status === 'loading') {
     return (
       <div className="w-full h-full flex items-center justify-center bg-slate-50">
@@ -137,30 +196,23 @@ export default function TldrawCanvas({ whiteboardId }: TldrawCanvasProps) {
     )
   }
   
-  // Show error state
   if (storeWithStatus.status === 'error') {
     return (
       <div className="w-full h-full flex items-center justify-center bg-slate-50">
         <div className="text-center">
           <h3 className="text-lg font-semibold text-red-600 mb-2">Error Loading Whiteboard</h3>
-          <p className="text-slate-600">{storeWithStatus.error}</p>
+          <p className="text-slate-600">{storeWithStatus.error?.message || 'Unknown error'}</p>
         </div>
       </div>
     )
   }
   
+  // Only render TldrawEditor when we have a synced store
+  // Using a separate component prevents hooks ordering issues
   return (
-    <div className="w-full h-full tldraw-container">
-      <Tldraw
-        store={storeWithStatus}
-        onMount={handleMount}
-        autoFocus
-        // Hide the default style panel since we have our own in the sidebar
-        components={{
-          StylePanel: null,
-        }}
-      />
-    </div>
+    <TldrawEditor 
+      store={storeWithStatus as TLStoreWithStatus & { status: 'synced-remote' }} 
+      onMount={handleMount} 
+    />
   )
 }
-

@@ -1,6 +1,6 @@
-
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "tldraw/tldraw.css";
 
 html {
   overscroll-behavior: none;
@@ -43,6 +43,66 @@ body {
 
 .spin-border {
   animation: spin-border 2s linear infinite;
+}
+
+/* AI Tutor animations */
+@keyframes slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(1rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slide-out-right {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(1rem);
+  }
+}
+
+@keyframes gentle-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.3s ease-out forwards;
+}
+
+.animate-slide-out-right {
+  animation: slide-out-right 0.2s ease-in forwards;
+}
+
+.animate-gentle-pulse {
+  animation: gentle-pulse 2s ease-in-out infinite;
+}
+
+/* Canvas hint appear animation */
+@keyframes hint-appear {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-hint-appear {
+  animation: hint-appear 0.3s ease-out forwards;
 }
 
 @custom-variant dark (&:is(.dark *));
@@ -277,4 +337,235 @@ body {
 .dark .tldraw-container .tlui-menu__content {
   border-color: #475569 !important;
   background-color: #1e293b !important;
+}
+
+/* Hide tldraw license watermark */
+.tldraw-container .tlui-watermark,
+.tldraw-container [class*="watermark"],
+.tldraw-container a[href*="tldraw.dev"],
+.tlui-watermark {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* ================================
+   AI Agent Chat Panel Styles
+   Matching tldraw agent starter kit
+   ================================ */
+
+/* Chat history scrollbar */
+.chat-history-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #e2e8f0 transparent;
+}
+
+.chat-history-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-history-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-history-scroll::-webkit-scrollbar-thumb {
+  background: #e2e8f0;
+  border-radius: 3px;
+}
+
+.chat-history-scroll::-webkit-scrollbar-thumb:hover {
+  background: #cbd5e1;
+}
+
+/* Sticky prompt header */
+.chat-history-prompt-container {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: linear-gradient(to bottom, white 80%, transparent);
+  padding-bottom: 1rem;
+  margin-bottom: -0.5rem;
+}
+
+/* Action item animations */
+@keyframes action-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.action-item-animate {
+  animation: action-slide-in 0.2s ease-out forwards;
+}
+
+/* Streaming indicator dot */
+@keyframes streaming-dot {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.streaming-dot {
+  animation: streaming-dot 1s ease-in-out infinite;
+}
+
+/* Accept/Reject button hover effects */
+.action-accept-btn {
+  transition: all 0.15s ease;
+}
+
+.action-accept-btn:hover {
+  transform: scale(1.02);
+  box-shadow: 0 2px 8px rgba(34, 197, 94, 0.25);
+}
+
+.action-reject-btn {
+  transition: all 0.15s ease;
+}
+
+.action-reject-btn:hover {
+  transform: scale(1.02);
+}
+
+/* Canvas preview shimmer effect */
+@keyframes preview-shimmer {
+  0% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.3;
+  }
+  100% {
+    opacity: 0.5;
+  }
+}
+
+.preview-shape {
+  animation: preview-shimmer 1.5s ease-in-out infinite;
+}
+
+/* Chat input focus glow */
+.chat-input-container {
+  transition: all 0.2s ease;
+}
+
+.chat-input-container:focus-within {
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* Message bubble animations */
+@keyframes message-appear {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.message-animate {
+  animation: message-appear 0.25s ease-out forwards;
+}
+
+/* Thinking collapse animation */
+@keyframes thinking-expand {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 500px;
+  }
+}
+
+.thinking-content {
+  animation: thinking-expand 0.3s ease-out forwards;
+  overflow: hidden;
+}
+
+/* Canvas highlight styles for AI actions */
+.ai-highlight-error {
+  stroke: #ef4444;
+  stroke-dasharray: 5 5;
+  stroke-width: 2;
+  fill: none;
+  animation: dash-animation 1s linear infinite;
+}
+
+.ai-highlight-success {
+  stroke: #22c55e;
+  stroke-dasharray: 5 5;
+  stroke-width: 2;
+  fill: none;
+}
+
+.ai-highlight-warning {
+  stroke: #f59e0b;
+  stroke-dasharray: 5 5;
+  stroke-width: 2;
+  fill: none;
+}
+
+@keyframes dash-animation {
+  to {
+    stroke-dashoffset: -10;
+  }
+}
+
+/* Prose styling for AI messages */
+.ai-message-prose {
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.ai-message-prose p {
+  margin-bottom: 0.5rem;
+}
+
+.ai-message-prose p:last-child {
+  margin-bottom: 0;
+}
+
+.ai-message-prose ul,
+.ai-message-prose ol {
+  padding-left: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.ai-message-prose li {
+  margin-bottom: 0.25rem;
+}
+
+.ai-message-prose code {
+  background-color: #f1f5f9;
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  font-size: 0.8125rem;
+}
+
+.ai-message-prose pre {
+  background-color: #f1f5f9;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  margin: 0.5rem 0;
+}
+
+.ai-message-prose blockquote {
+  border-left: 3px solid #e2e8f0;
+  padding-left: 0.75rem;
+  color: #64748b;
+  font-style: italic;
 }
