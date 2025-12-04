@@ -56,6 +56,8 @@ export default defineSchema({
         userID: v.string(),
         topic: v.string(),
         problem_statement: v.optional(v.string()),
+        // tldraw snapshot - JSON stringified document state
+        tldrawSnapshot: v.optional(v.string()),
         createdAt: v.string(),
         updatedAt: v.string(),
     }).index("byUserID", ["userID"]),

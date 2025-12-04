@@ -20,6 +20,12 @@ body {
   display: none;  /* Safari and Chrome */
 }
 
+/* Vertical text for sidebar tab */
+.writing-mode-vertical {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
 @keyframes shake {
   0%, 100% { transform: translateX(0); }
   20%, 60% { transform: translateX(-10px); }
@@ -155,4 +161,120 @@ body {
 .prose img {
   max-width: 100%;
   height: auto;
+}
+
+/* tldraw container styling */
+.tldraw-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.tldraw-container .tl-container {
+  position: absolute;
+  inset: 0;
+}
+
+/* Ensure tldraw canvas takes full space */
+.tldraw__editor {
+  position: absolute !important;
+  inset: 0 !important;
+}
+
+/* Override tldraw default background color - clean white */
+.tldraw-container {
+  --color-background: #ffffff !important;
+  --color-muted-1: #f1f5f9 !important;
+}
+
+.tldraw-container .tl-background {
+  background-color: #ffffff !important;
+}
+
+.tldraw-container .tl-canvas {
+  background-color: #ffffff !important;
+}
+
+/* Dark mode - clean dark background */
+.dark .tldraw-container {
+  --color-background: #1e293b !important;
+  --color-muted-1: #334155 !important;
+}
+
+.dark .tldraw-container .tl-background {
+  background-color: #1e293b !important;
+}
+
+.dark .tldraw-container .tl-canvas {
+  background-color: #1e293b !important;
+}
+
+/* Remove all shadows from tldraw UI elements */
+.tldraw-container .tlui-toolbar,
+.tldraw-container .tlui-navigation-zone,
+.tldraw-container .tlui-menu-zone,
+.tldraw-container .tlui-zoom-menu,
+.tldraw-container .tlui-page-menu,
+.tldraw-container .tlui-actions-menu,
+.tldraw-container .tlui-help-menu {
+  border: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  border-radius: 12px !important;
+  background-color: #f8fafc !important;
+}
+
+/* Clean up tldraw buttons - remove borders and shadows */
+.tldraw-container .tlui-button,
+.tldraw-container .tlui-button__menu,
+.tldraw-container .tlui-toolbar__button {
+  border: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.tldraw-container .tlui-button:hover {
+  background-color: #e2e8f0 !important;
+  box-shadow: none !important;
+}
+
+.dark .tldraw-container .tlui-toolbar,
+.dark .tldraw-container .tlui-navigation-zone,
+.dark .tldraw-container .tlui-menu-zone,
+.dark .tldraw-container .tlui-zoom-menu,
+.dark .tldraw-container .tlui-page-menu {
+  background-color: #334155 !important;
+}
+
+.dark .tldraw-container .tlui-button:hover {
+  background-color: #475569 !important;
+}
+
+/* Override tldraw selection colors for better visibility */
+.tldraw-container [data-state="hinted"] {
+  --tl-selection-stroke: #3b82f6 !important;
+}
+
+/* Make canvas grid subtle */
+.tldraw-container .tl-grid {
+  opacity: 0.3;
+}
+
+/* Clean popover/menu styling - no shadows */
+.tldraw-container .tlui-popover,
+.tldraw-container .tlui-menu,
+.tldraw-container .tlui-popover__content,
+.tldraw-container .tlui-menu__content {
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: none !important;
+  border-radius: 8px !important;
+  background-color: #ffffff !important;
+}
+
+.dark .tldraw-container .tlui-popover,
+.dark .tldraw-container .tlui-menu,
+.dark .tldraw-container .tlui-popover__content,
+.dark .tldraw-container .tlui-menu__content {
+  border-color: #475569 !important;
+  background-color: #1e293b !important;
 }

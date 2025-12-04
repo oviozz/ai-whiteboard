@@ -6,6 +6,36 @@ import {getGatewayModel} from "../src/lib/gateway-client";
 import {CoreMessage, generateText, ImagePart, streamText, TextPart} from "ai";
 import {containsWhiteboardTrigger} from "../src/lib/utils";
 
+/**
+ * Fetch an image from URL and convert to base64 data URL for AI models
+ * Google's Gemini doesn't accept external URLs, needs base64
+ * Uses web-standard APIs (no Node.js Buffer)
+ */
+async function fetchImageAsBase64(imageUrl: string): Promise<string | null> {
+    try {
+        const response = await fetch(imageUrl);
+        if (!response.ok) {
+            console.error(`Failed to fetch image: ${response.status}`);
+            return null;
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        const uint8Array = new Uint8Array(arrayBuffer);
+        
+        // Convert to base64 using btoa (web standard)
+        let binary = '';
+        for (let i = 0; i < uint8Array.length; i++) {
+            binary += String.fromCharCode(uint8Array[i]);
+        }
+        const base64 = btoa(binary);
+        
+        const contentType = response.headers.get('content-type') || 'image/png';
+        return `data:${contentType};base64,${base64}`;
+    } catch (error) {
+        console.error("Error fetching image for base64 conversion:", error);
+        return null;
+    }
+}
+
 export const getWhiteboardContent = query({
     args: {whiteboardID: v.optional(v.id("whiteboards"))},
     handler: async (ctx, args) => {
@@ -263,6 +293,144 @@ export const checkWhiteboardElements = internalQuery({
     }
 })
 
+/**
+ * Internal query to check if whiteboard has tldraw content
+ */
+export const hasTldrawContentInternal = internalQuery({
+    args: {
+        whiteboardID: v.id("whiteboards"),
+    },
+    handler: async (ctx, args) => {
+        const whiteboard = await ctx.db.get(args.whiteboardID);
+        if (!whiteboard) {
+            return false;
+        }
+        
+        // Check if there's a non-empty tldraw snapshot
+        if (whiteboard.tldrawSnapshot) {
+            try {
+                const snapshot = JSON.parse(whiteboard.tldrawSnapshot);
+                // Check if there are any shapes in the document
+                const hasShapes = Object.keys(snapshot).some(key => 
+                    key.startsWith('shape:')
+                );
+                return hasShapes;
+            } catch {
+                return false;
+            }
+        }
+        
+        return false;
+    },
+})
+
+// ============================================
+// tldraw Snapshot Persistence
+// ============================================
+
+/**
+ * Save tldraw document snapshot to the whiteboard
+ */
+export const saveTldrawSnapshot = mutation({
+    args: {
+        whiteboardID: v.id("whiteboards"),
+        snapshot: v.string(), // JSON stringified tldraw document snapshot
+    },
+    handler: async (ctx, args) => {
+        const { whiteboardID, snapshot } = args;
+        
+        const whiteboard = await ctx.db.get(whiteboardID);
+        if (!whiteboard) {
+            return { success: false, message: "Whiteboard not found" };
+        }
+        
+        await ctx.db.patch(whiteboardID, {
+            tldrawSnapshot: snapshot,
+            updatedAt: Date.now().toString(),
+        });
+        
+        return { success: true };
+    },
+});
+
+/**
+ * Get tldraw snapshot for a whiteboard
+ */
+export const getTldrawSnapshot = query({
+    args: {
+        whiteboardID: v.id("whiteboards"),
+    },
+    handler: async (ctx, args) => {
+        const whiteboard = await ctx.db.get(args.whiteboardID);
+        if (!whiteboard) {
+            return { whiteboard: null, snapshot: null, status: "not_found" as const };
+        }
+        
+        return {
+            whiteboard,
+            snapshot: whiteboard.tldrawSnapshot || null,
+            status: "success" as const,
+        };
+    },
+});
+
+/**
+ * Clear tldraw whiteboard (set snapshot to null)
+ */
+export const clearTldrawWhiteboard = mutation({
+    args: {
+        whiteboardID: v.id("whiteboards"),
+    },
+    handler: async (ctx, args) => {
+        const whiteboard = await ctx.db.get(args.whiteboardID);
+        if (!whiteboard) {
+            return { success: false, message: "Whiteboard not found" };
+        }
+        
+        await ctx.db.patch(args.whiteboardID, {
+            tldrawSnapshot: undefined,
+            updatedAt: Date.now().toString(),
+        });
+        
+        return { success: true, message: "Whiteboard cleared successfully" };
+    },
+});
+
+/**
+ * Check if whiteboard has any content (for tldraw)
+ */
+export const hasTldrawContent = query({
+    args: {
+        whiteboardID: v.id("whiteboards"),
+    },
+    handler: async (ctx, args) => {
+        const whiteboard = await ctx.db.get(args.whiteboardID);
+        if (!whiteboard) {
+            return false;
+        }
+        
+        // Check if there's a non-empty tldraw snapshot
+        if (whiteboard.tldrawSnapshot) {
+            try {
+                const snapshot = JSON.parse(whiteboard.tldrawSnapshot);
+                // Check if there are any shapes in the document
+                const hasShapes = Object.keys(snapshot).some(key => 
+                    key.startsWith('shape:')
+                );
+                return hasShapes;
+            } catch {
+                return false;
+            }
+        }
+        
+        return false;
+    },
+});
+
+// ============================================
+// Legacy Actions (keeping for backwards compatibility)
+// ============================================
+
 export const solveItAll = action({
     args: {
         whiteboardID: v.id("whiteboards"),
@@ -272,11 +440,12 @@ export const solveItAll = action({
 
         const {whiteboardID, storageID} = args;
 
-        const elements_items = await ctx.runQuery(internal.whiteboardActions.checkWhiteboardElements, {
+        // Check if whiteboard has tldraw content
+        const hasContent = await ctx.runQuery(internal.whiteboardActions.hasTldrawContentInternal, {
             whiteboardID
-        })
+        });
 
-        if (elements_items.length === 0) {
+        if (!hasContent) {
             return {success: false, message: "There is nothing there to solve"}
         }
 
@@ -327,12 +496,20 @@ export const solveItAll = action({
         `;
 
 
-            // Pass the Convex storage URL directly - it's publicly accessible
+            // Convert image to base64 for Gemini compatibility
+            if (!image_url) {
+                return { success: false, message: "Could not get image URL" };
+            }
+            const base64Image = await fetchImageAsBase64(image_url);
+            if (!base64Image) {
+                return { success: false, message: "Could not convert image for AI analysis" };
+            }
+            
             const userContent = [
                 { type: "text", text: "Solve this problem and give me the answers step by step" } as TextPart,
                 {
                     type: "image",
-                    image: image_url!
+                    image: base64Image
                 } as ImagePart
             ];
 

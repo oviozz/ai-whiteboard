@@ -286,7 +286,7 @@ export default function HeaderTutorIndicator({
                     href={`https://www.youtube.com/results?search_query=${encodeURIComponent(video.searchQuery)}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="block p-2 border-2 border-slate-200 rounded-lg hover:border-red-300 transition-colors"
+                    className="block p-2 border border-slate-200 rounded-lg hover:border-red-300 transition-colors"
                   >
                     <div className="flex items-start gap-2">
                       <div className="p-1.5 rounded border border-red-300">
@@ -324,7 +324,7 @@ export default function HeaderTutorIndicator({
                     }
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="block p-2 border-2 border-slate-200 rounded-lg hover:border-blue-300 transition-colors"
+                    className="block p-2 border border-slate-200 rounded-lg hover:border-blue-300 transition-colors"
                   >
                     <div className="flex items-start gap-2">
                       <div className="p-1.5 rounded border border-blue-300">
@@ -389,7 +389,7 @@ export default function HeaderTutorIndicator({
 
         <PopoverContent
           align="end"
-          className="w-80 p-0 border-2 border-slate-200 bg-white"
+          className="w-80 p-0 border border-slate-200 bg-white shadow-none"
           sideOffset={8}
         >
           {/* Header */}
