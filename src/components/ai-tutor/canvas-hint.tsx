@@ -13,23 +13,15 @@ import {
 import { cn } from "@/lib/utils";
 import useTutorHints, { VideoSuggestion } from "@/app/store/use-tutor-hints";
 import { useTldrawEditor } from "@/contexts/tldraw-editor-context";
-import { LastEditPosition } from "@/hooks/use-activity-monitor";
+import { useTldrawActivityMonitor } from "@/hooks/use-activity-monitor";
 
 type CanvasHintProps = {
-  canvasRef: React.RefObject<HTMLCanvasElement>;
-  panOffset: { x: number; y: number };
-  zoomLevel: number;
-  lastEditPosition?: LastEditPosition | null;
   className?: string;
 };
 
 const AUTO_DISMISS_DELAY = 30000; // 30 seconds
 
 export default function CanvasHint({
-  canvasRef,
-  panOffset,
-  zoomLevel,
-  lastEditPosition,
   className,
 }: CanvasHintProps) {
   const {
@@ -41,6 +33,13 @@ export default function CanvasHint({
     videos,
   } = useTutorHints();
   const { editor } = useTldrawEditor();
+  
+  // Track last edit position for hint placement
+  const { lastEditPosition } = useTldrawActivityMonitor({
+    editor,
+    enabled: proactiveHintsEnabled,
+  });
+  
   const [isVisible, setIsVisible] = useState(false);
   const [isDismissing, setIsDismissing] = useState(false);
 
@@ -188,8 +187,9 @@ export default function CanvasHint({
     baseX = screenPoint.x + 30;
     baseY = screenPoint.y - 60;
   } else if (hintWorldPosition) {
-    baseX = hintWorldPosition.x * zoomLevel + panOffset.x + 30;
-    baseY = hintWorldPosition.y * zoomLevel + panOffset.y - 60;
+    // Fallback: use world position directly (approximate)
+    baseX = hintWorldPosition.x + 30;
+    baseY = hintWorldPosition.y - 60;
   } else {
     return null;
   }

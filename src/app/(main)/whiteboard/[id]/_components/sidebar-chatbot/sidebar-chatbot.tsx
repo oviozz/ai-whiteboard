@@ -45,6 +45,7 @@ import useVoiceState from "@/app/store/use-voice-state";
 import { VoiceOverlay } from "@/components/voice";
 import { useQuery } from "convex/react";
 import { api } from "../../../../../../../convex/_generated/api";
+import useSolveAll from "@/app/store/use-solve-all";
 
 // Model options - matching the API route
 const AVAILABLE_MODELS = [
@@ -687,6 +688,35 @@ function SidebarChatbot({ whiteboardID, isOpen, onToggle }: ChatbotSheetProps) {
     handleVoiceOverlaySend,
     handleVoiceOverlayClose,
   ]);
+
+  // Solve it all store
+  const { setIsLoading: setSolveLoading } = useSolveAll();
+
+  // Listen for "Solve it All" event from sidebar
+  useEffect(() => {
+    const handleSolveItAll = async () => {
+      if (!editor || isGenerating) return;
+
+      // Check if canvas has content
+      const shapes = editor.getCurrentPageShapes();
+      if (shapes.length === 0) {
+        setSolveLoading(false);
+        toast.info("Nothing to solve! Add some content to the canvas first.");
+        return;
+      }
+
+      // Send the solve prompt to the AI
+      const solvePrompt = `Please solve everything on the canvas completely. Provide detailed step-by-step solutions for all problems shown. Remove any incorrect work and replace it with the correct, complete solution. Show all steps clearly.`;
+
+      await streamAgentResponse(solvePrompt);
+
+      // Turn off loading when done (the streamAgentResponse handles its own state)
+      setSolveLoading(false);
+    };
+
+    window.addEventListener("solve-it-all", handleSolveItAll);
+    return () => window.removeEventListener("solve-it-all", handleSolveItAll);
+  }, [editor, isGenerating, streamAgentResponse, setSolveLoading]);
 
   return (
     <>

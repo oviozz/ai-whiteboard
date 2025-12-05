@@ -17,6 +17,7 @@ import {
   Undo2,
   Redo2,
   Palette,
+  Sparkles,
 } from "lucide-react";
 import { useMutation } from "convex/react";
 import { api } from "../../../../../../convex/_generated/api";
@@ -25,6 +26,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useTldrawEditor } from "@/contexts/tldraw-editor-context";
 import { clearWhiteboard } from "@/lib/tldraw-actions";
+import useSolveAll from "@/app/store/use-solve-all";
 import {
   Popover,
   PopoverContent,
@@ -592,6 +594,32 @@ export default function WhiteboardSidebar({
     }
   }, [editor, clearTldrawWhiteboard, whiteboardID]);
 
+  // Solve it all store
+  const { setIsLoading: setSolveLoading } = useSolveAll();
+
+  const handleSolve = useCallback(() => {
+    if (!editor) {
+      toast.error("Editor not ready");
+      return;
+    }
+
+    // Check if canvas has any shapes
+    const shapes = editor.getCurrentPageShapes();
+    if (shapes.length === 0) {
+      toast.info("Nothing to solve! Add some content to the canvas first.");
+      return;
+    }
+
+    // Trigger the solve overlay
+    setSolveLoading(true);
+    
+    // Dispatch a custom event that the chatbot can listen to
+    const solveEvent = new CustomEvent('solve-it-all', {
+      detail: { whiteboardID }
+    });
+    window.dispatchEvent(solveEvent);
+  }, [editor, setSolveLoading, whiteboardID]);
+
   const handleUndo = useCallback(() => {
     if (!editor) return;
     editor.undo();
@@ -744,8 +772,19 @@ export default function WhiteboardSidebar({
         </div>
       </div>
 
-      {/* Clear Button */}
-      <div className="p-3 border-t border-slate-200 dark:border-slate-700">
+      {/* Action Buttons */}
+      <div className="p-3 border-t border-slate-200 dark:border-slate-700 space-y-2">
+        {/* Solve it All Button */}
+        <SidebarButton
+          action={handleSolve}
+          icon={Sparkles}
+          label="Solve it All"
+          isCollapsed={collapsed}
+          className="bg-gradient-to-r from-violet-500 to-purple-600 text-white hover:from-violet-600 hover:to-purple-700"
+          disabled={!editor}
+        />
+        
+        {/* Clear Button */}
         <SidebarButton
           action={handleClear}
           icon={TrashIcon}

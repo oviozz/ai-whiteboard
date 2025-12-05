@@ -78,7 +78,6 @@ export default function ProactiveTutorProvider({
     setAnalyzing,
     setAnalysisResult,
     setAnalysisError,
-    showQuickHint,
     setVideos,
   } = useTutorHints();
 
@@ -175,9 +174,17 @@ export default function ProactiveTutorProvider({
               }
             );
           } else {
-            // For quick hints, show near the work area
-            showQuickHint(result.hint, position);
-            setAnalysisResult(result.status === "error" ? "wrong" : "stuck");
+            // For quick hints, pass the hint to setAnalysisResult to avoid race condition
+            // (Previously showQuickHint was called then setAnalysisResult which cleared the hint)
+            setAnalysisResult(
+              result.status === "error" ? "wrong" : "stuck",
+              {
+                type: "quick",
+                content: result.hint,
+                position,
+                timestamp: Date.now(),
+              }
+            );
           }
         }
       } else if (result.status === "correct" || result.status === "on_track") {
@@ -217,7 +224,6 @@ export default function ProactiveTutorProvider({
     setAnalyzing,
     setAnalysisResult,
     setAnalysisError,
-    showQuickHint,
     setVideos,
   ]);
 

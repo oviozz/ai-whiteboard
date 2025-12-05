@@ -83,6 +83,9 @@ export default function HeaderTutorIndicator({
     }
   }, [isAnalyzing]);
 
+  // Track previous status for change detection
+  const previousStatusRef = useRef<string | null>(null);
+
   // Auto-open popover when a new hint is available
   useEffect(() => {
     if (activeHint && activeHint.content !== previousHintRef.current) {
@@ -98,6 +101,20 @@ export default function HeaderTutorIndicator({
       }
     }
   }, [activeHint, currentStatus]);
+
+  // Auto-open when status changes to "wrong" or "stuck" (even for quick hints)
+  useEffect(() => {
+    if (currentStatus !== previousStatusRef.current) {
+      previousStatusRef.current = currentStatus;
+
+      // Auto-open when status indicates a problem
+      if (currentStatus === "wrong" || currentStatus === "stuck") {
+        setIsOpen(true);
+        // Also switch to hints tab to show the relevant info
+        setActiveTab("hint");
+      }
+    }
+  }, [currentStatus, setActiveTab]);
 
   // Get status config
   const getStatusConfig = () => {

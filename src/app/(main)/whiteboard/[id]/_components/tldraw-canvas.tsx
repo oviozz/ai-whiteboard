@@ -20,6 +20,7 @@ import { Loader } from 'lucide-react'
 import { TldrawAgent } from '@/lib/agent/tldraw-agent'
 import { setAgentForTools, TargetAreaTool, TargetShapeTool } from '@/lib/agent/tools'
 import { ContextHighlights, AgentViewportBoundsHighlight } from '@/components/highlights'
+import { CanvasHint } from '@/components/ai-tutor'
 
 interface TldrawCanvasProps {
   whiteboardId: Id<"whiteboards">
@@ -30,11 +31,18 @@ const customTools = [TargetAreaTool, TargetShapeTool]
 
 // Memoized overlay component to prevent re-renders
 const CanvasOverlay = React.memo(function CanvasOverlay({ agent }: { agent: TldrawAgent | null }) {
-  if (!agent) return null
   return (
     <>
-      <AgentViewportBoundsHighlight agent={agent} />
-      <ContextHighlights agent={agent} />
+      {/* AI Tutor hints overlay - always rendered */}
+      <CanvasHint />
+      
+      {/* Agent-related overlays - only when agent is present */}
+      {agent && (
+        <>
+          <AgentViewportBoundsHighlight agent={agent} />
+          <ContextHighlights agent={agent} />
+        </>
+      )}
     </>
   )
 })
