@@ -1,17 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import {
-  X,
-  Share2,
-  Link,
-  Check,
-  QrCode,
-  Copy,
-} from "lucide-react";
+import { X, Share2, Link, Check, QrCode, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import QRCode from "qrcode";
 
 type ShareDialogProps = {
   isOpen: boolean;
@@ -38,35 +32,33 @@ export default function ShareDialog({ isOpen, onClose }: ShareDialogProps) {
     }
   }, [showQR, currentUrl]);
 
-  // Generate QR code using Google Charts API (no external package needed)
-  const generateQRCode = (url: string, canvas: HTMLCanvasElement) => {
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const size = 200;
-    canvas.width = size;
-    canvas.height = size;
-
-    // Use Google Charts API to generate QR code
-    const qrUrl = `https://chart.googleapis.com/chart?cht=qr&chs=${size}x${size}&chl=${encodeURIComponent(url)}&choe=UTF-8`;
-    
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      ctx.drawImage(img, 0, 0, size, size);
-    };
-    img.onerror = () => {
+  // Generate QR code using qrcode library
+  const generateQRCode = async (url: string, canvas: HTMLCanvasElement) => {
+    try {
+      await QRCode.toCanvas(canvas, url, {
+        width: 200,
+        margin: 2,
+        color: {
+          dark: "#1e293b",
+          light: "#ffffff",
+        },
+      });
+    } catch (err) {
+      console.error("Failed to generate QR code:", err);
       // Fallback: draw a placeholder
-      ctx.fillStyle = "#f1f5f9";
-      ctx.fillRect(0, 0, size, size);
-      ctx.fillStyle = "#64748b";
-      ctx.font = "14px system-ui";
-      ctx.textAlign = "center";
-      ctx.fillText("QR Code", size / 2, size / 2 - 10);
-      ctx.font = "11px system-ui";
-      ctx.fillText("Scan to open", size / 2, size / 2 + 10);
-    };
-    img.src = qrUrl;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        const size = 200;
+        canvas.width = size;
+        canvas.height = size;
+        ctx.fillStyle = "#f1f5f9";
+        ctx.fillRect(0, 0, size, size);
+        ctx.fillStyle = "#64748b";
+        ctx.font = "14px system-ui";
+        ctx.textAlign = "center";
+        ctx.fillText("QR Code Error", size / 2, size / 2);
+      }
+    }
   };
 
   const handleCopyLink = async () => {
@@ -82,7 +74,7 @@ export default function ShareDialog({ isOpen, onClose }: ShareDialogProps) {
 
   const handleDownloadQR = () => {
     if (!qrCanvasRef.current) return;
-    
+
     const link = document.createElement("a");
     link.download = "whiteboard-qr.png";
     link.href = qrCanvasRef.current.toDataURL("image/png");
@@ -182,10 +174,7 @@ export default function ShareDialog({ isOpen, onClose }: ShareDialogProps) {
             ) : (
               <div className="flex flex-col items-center space-y-4">
                 <div className="p-4 bg-white rounded-xl border-2 border-slate-200 shadow-sm">
-                  <canvas
-                    ref={qrCanvasRef}
-                    className="w-[200px] h-[200px]"
-                  />
+                  <canvas ref={qrCanvasRef} className="w-[200px] h-[200px]" />
                 </div>
                 <p className="text-xs text-slate-500 text-center">
                   Scan this QR code to open the whiteboard
@@ -205,11 +194,11 @@ export default function ShareDialog({ isOpen, onClose }: ShareDialogProps) {
         {/* Footer */}
         <div className="px-6 py-4 bg-slate-50 border-t border-slate-200">
           <p className="text-xs text-slate-500 text-center">
-            Anyone with this link can view and collaborate on this whiteboard in real-time.
+            Anyone with this link can view and collaborate on this whiteboard in
+            real-time.
           </p>
         </div>
       </div>
     </div>
   );
 }
-
