@@ -879,7 +879,16 @@ export class AgentActionExecutor {
           (textShape.size as keyof typeof FONT_SIZES) || "l";
         // Default scale of 1.5 for AI-generated text (more readable)
         const scale = textShape.scale ?? 1.5;
-        const textAlign = textShape.textAlign || "start";
+        // Map textAlign values - tldraw uses "start", "middle", "end" (not "center", "left", "right")
+        const textAlignMap: Record<string, "start" | "middle" | "end"> = {
+          start: "start",
+          left: "start",
+          middle: "middle",
+          center: "middle",
+          end: "end",
+          right: "end",
+        };
+        const textAlign = textAlignMap[textShape.textAlign || "start"] || "start";
         const effectiveFontSize = FONT_SIZES[textSize] * scale;
 
         // Sanitize input coordinates
