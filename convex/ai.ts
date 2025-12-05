@@ -6,36 +6,6 @@ import {CoreMessage, ImagePart, streamText, TextPart, generateText} from "ai";
 import {containsWhiteboardTrigger} from "../src/lib/utils";
 import {getGatewayModel, getGatewayClient} from "../src/lib/gateway-client";
 
-/**
- * Fetch an image from URL and convert to base64 data URL for AI models
- * Google's Gemini doesn't accept external URLs, needs base64
- * Uses web-standard APIs (no Node.js Buffer)
- */
-async function fetchImageAsBase64(imageUrl: string): Promise<string | null> {
-    try {
-        const response = await fetch(imageUrl);
-        if (!response.ok) {
-            console.error(`Failed to fetch image: ${response.status}`);
-            return null;
-        }
-        const arrayBuffer = await response.arrayBuffer();
-        const uint8Array = new Uint8Array(arrayBuffer);
-        
-        // Convert to base64 using btoa (web standard)
-        let binary = '';
-        for (let i = 0; i < uint8Array.length; i++) {
-            binary += String.fromCharCode(uint8Array[i]);
-        }
-        const base64 = btoa(binary);
-        
-        const contentType = response.headers.get('content-type') || 'image/png';
-        return `data:${contentType};base64,${base64}`;
-    } catch (error) {
-        console.error("Error fetching image for base64 conversion:", error);
-        return null;
-    }
-}
-
 export const generateResponse = action({
     args: {
         whiteboardID: v.id("whiteboards"),
@@ -225,18 +195,14 @@ export const _streamAndSaveResponse = internalAction({
             let userContent: string | Array<TextPart | ImagePart> = userMessage;
 
             if (imageURL) {
-                // Convert image to base64 for Gemini compatibility
-                const base64Image = await fetchImageAsBase64(imageURL);
-                if (base64Image) {
-                    userContent = [
-                        { type: "text", text: userMessage } as TextPart,
-                        {
-                            type: "image",
-                            image: base64Image
-                        } as ImagePart
-                    ];
-                }
-                // If base64 conversion fails, just use text
+                // Pass URL directly - Convex storage URLs are publicly accessible
+                userContent = [
+                    { type: "text", text: userMessage } as TextPart,
+                    {
+                        type: "image",
+                        image: new URL(imageURL)
+                    } as ImagePart
+                ];
             }
 
 
@@ -467,15 +433,11 @@ ${documentContext}
 - Don't give away answers - guide toward discovery
 - Return ONLY valid JSON, no other text`;
 
-            // Convert image to base64 for Gemini compatibility
-            const base64Screenshot = await fetchImageAsBase64(screenshotUrl);
-            if (!base64Screenshot) {
-                return { success: false, error: "Could not convert screenshot for analysis" };
-            }
-            
+            // Pass URL directly - Convex storage URLs are publicly accessible
+            // The AI SDK and Gemini can fetch URLs directly
             const userContent: Array<TextPart | ImagePart> = [
                 { type: "text", text: "Analyze this student's whiteboard work and provide guidance:" },
-                { type: "image", image: base64Screenshot },
+                { type: "image", image: new URL(screenshotUrl) },
             ];
 
             const messages: CoreMessage[] = [
@@ -740,13 +702,11 @@ ${canvasContext ? `\n**Current Canvas State:**\n${canvasContext}` : ""}
         });
 
         if (imageUrl) {
-          const base64Image = await fetchImageAsBase64(imageUrl);
-          if (base64Image) {
-            userContent = [
-              { type: "text", text: userMessage } as TextPart,
-              { type: "image", image: base64Image } as ImagePart,
-            ];
-          }
+          // Pass URL directly - Convex storage URLs are publicly accessible
+          userContent = [
+            { type: "text", text: userMessage } as TextPart,
+            { type: "image", image: new URL(imageUrl) } as ImagePart,
+          ];
         }
       }
 
