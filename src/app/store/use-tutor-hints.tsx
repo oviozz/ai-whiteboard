@@ -52,6 +52,13 @@ type TutorHintsState = {
   isAnalyzing: boolean;
   analysisError: string | null;
   
+  // Smart check state (for interval-based checking)
+  lastCheckHash: string | null;
+  checkIntervalMs: number;
+  isCheckingEnabled: boolean;
+  lastCheckTime: number | null;
+  shapeCount: number;
+  
   // Guided steps
   guidedSteps: GuidedStep[];
   currentStepIndex: number;
@@ -87,6 +94,13 @@ type TutorHintsState = {
   setAnalysisResult: (status: AnalysisStatus, hint?: TutorHint) => void;
   setAnalysisError: (error: string | null) => void;
   
+  // Smart check actions
+  setLastCheckHash: (hash: string | null) => void;
+  setCheckIntervalMs: (ms: number) => void;
+  setCheckingEnabled: (enabled: boolean) => void;
+  updateCheckState: (hash: string, shapeCount: number) => void;
+  shouldCheck: (currentHash: string, currentShapeCount: number) => boolean;
+  
   // Guided steps actions
   setGuidedSteps: (steps: GuidedStep[]) => void;
   completeStep: (stepNumber: number) => void;
@@ -109,6 +123,8 @@ type TutorHintsState = {
   reset: () => void;
 };
 
+const DEFAULT_CHECK_INTERVAL_MS = 12000; // 12 seconds
+
 const initialState = {
   activeHint: null,
   showBubble: false,
@@ -119,6 +135,13 @@ const initialState = {
   currentStatus: null,
   isAnalyzing: false,
   analysisError: null,
+  // Smart check state
+  lastCheckHash: null,
+  checkIntervalMs: DEFAULT_CHECK_INTERVAL_MS,
+  isCheckingEnabled: true,
+  lastCheckTime: null,
+  shapeCount: 0,
+  // Guided steps
   guidedSteps: [] as GuidedStep[],
   currentStepIndex: 0,
   isLoadingSteps: false,
@@ -243,6 +266,61 @@ const useTutorHints = create<TutorHintsState>((set, get) => ({
       analysisError: error,
       isAnalyzing: false,
     });
+  },
+
+  // Smart check actions
+  setLastCheckHash: (hash) => {
+    set({ lastCheckHash: hash });
+  },
+
+  setCheckIntervalMs: (ms) => {
+    set({ checkIntervalMs: ms });
+  },
+
+  setCheckingEnabled: (enabled) => {
+    set({ isCheckingEnabled: enabled });
+  },
+
+  updateCheckState: (hash, shapeCount) => {
+    set({
+      lastCheckHash: hash,
+      lastCheckTime: Date.now(),
+      shapeCount,
+    });
+  },
+
+  shouldCheck: (currentHash, currentShapeCount) => {
+    const state = get();
+    
+    // Don't check if checking is disabled
+    if (!state.isCheckingEnabled || !state.proactiveHintsEnabled) {
+      return false;
+    }
+    
+    // Don't check if already analyzing
+    if (state.isAnalyzing) {
+      return false;
+    }
+    
+    // Don't check if canvas is empty
+    if (currentShapeCount === 0) {
+      return false;
+    }
+    
+    // Don't check if nothing has changed since last check
+    if (currentHash === state.lastCheckHash) {
+      return false;
+    }
+    
+    // Don't check too frequently
+    if (state.lastCheckTime) {
+      const timeSinceLastCheck = Date.now() - state.lastCheckTime;
+      if (timeSinceLastCheck < state.checkIntervalMs) {
+        return false;
+      }
+    }
+    
+    return true;
   },
 
   setProactiveHintsEnabled: (enabled) => {

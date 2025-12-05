@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useRef, useEffect, useState, useMemo } from 'react'
+import React, { useCallback, useRef, useEffect, useState, useMemo } from 'react'
 import { 
   Tldraw, 
   getSnapshot, 
@@ -28,8 +28,19 @@ interface TldrawCanvasProps {
 // Custom tools for agent context selection
 const customTools = [TargetAreaTool, TargetShapeTool]
 
+// Memoized overlay component to prevent re-renders
+const CanvasOverlay = React.memo(function CanvasOverlay({ agent }: { agent: TldrawAgent | null }) {
+  if (!agent) return null
+  return (
+    <>
+      <AgentViewportBoundsHighlight agent={agent} />
+      <ContextHighlights agent={agent} />
+    </>
+  )
+})
+
 // Separate component for the actual Tldraw editor to avoid hooks ordering issues
-function TldrawEditor({ 
+const TldrawEditor = React.memo(function TldrawEditor({ 
   store, 
   onMount,
   agent,
@@ -38,15 +49,10 @@ function TldrawEditor({
   onMount: (editor: Editor) => (() => void) | void
   agent: TldrawAgent | null
 }) {
-  // Custom components for agent highlights
+  // Custom components for agent highlights - memoized to prevent flicker
   const components: TLComponents = useMemo(() => ({
     StylePanel: null,
-    InFrontOfTheCanvas: () => (
-      <>
-        {agent && <AgentViewportBoundsHighlight agent={agent} />}
-        {agent && <ContextHighlights agent={agent} />}
-      </>
-    ),
+    InFrontOfTheCanvas: () => <CanvasOverlay agent={agent} />,
   }), [agent])
 
   return (
@@ -60,7 +66,7 @@ function TldrawEditor({
       />
     </div>
   )
-}
+})
 
 export default function TldrawCanvas({ whiteboardId }: TldrawCanvasProps) {
   const { setEditor, setAgent } = useTldrawEditor()
@@ -178,14 +184,25 @@ export default function TldrawCanvas({ whiteboardId }: TldrawCanvasProps) {
     }
     
     // Listen for document changes and auto-save with debounce
+    // Use a longer debounce to prevent lag during batch operations like Ctrl+A + Delete
+    let lastChangeTime = 0
+    const MIN_SAVE_INTERVAL = 3000 // Minimum 3 seconds between saves
+    
     const unsubscribe = editor.store.listen(
       () => {
+        const now = Date.now()
+        
         // Clear existing timeout
         if (saveTimeoutRef.current) {
           clearTimeout(saveTimeoutRef.current)
         }
         
-        // Debounce save by 2 seconds for better batching
+        // Calculate delay - use longer delay if we just saved
+        const timeSinceLastChange = now - lastChangeTime
+        const delay = timeSinceLastChange < 500 ? 3000 : 2000 // Longer delay for rapid changes
+        lastChangeTime = now
+        
+        // Debounce save
         saveTimeoutRef.current = setTimeout(async () => {
           // Prevent concurrent saves
           if (isSavingRef.current) return
@@ -208,7 +225,7 @@ export default function TldrawCanvas({ whiteboardId }: TldrawCanvasProps) {
           } finally {
             isSavingRef.current = false
           }
-        }, 2000)
+        }, delay)
       },
       { scope: 'document', source: 'user' }
     )

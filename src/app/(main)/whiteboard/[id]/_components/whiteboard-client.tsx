@@ -84,12 +84,7 @@ export default function WhiteboardClient({ whiteboardId }: WhiteboardClientProps
               className="flex-1 relative overflow-hidden"
               style={{ touchAction: "none", backgroundColor: "#ffffff" }}
             >
-              <ProactiveTutorProvider
-                whiteboardID={whiteboardId}
-                canvasRef={{ current: null }} // tldraw manages its own canvas
-                panOffset={{ x: 0, y: 0 }}
-                zoomLevel={1}
-              >
+              <ProactiveTutorProvider whiteboardID={whiteboardId}>
                 <SolveItAllProvider>
                   <TldrawCanvas whiteboardId={whiteboardId} />
                 </SolveItAllProvider>

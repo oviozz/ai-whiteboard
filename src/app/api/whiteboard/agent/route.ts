@@ -54,6 +54,18 @@ export const AVAILABLE_MODELS = [
 
 export type ModelId = (typeof AVAILABLE_MODELS)[number]["id"];
 
+// Document context for PDF/uploaded materials
+interface DocumentContext {
+  filename: string;
+  extractedContent?: string;
+  problems?: Array<{
+    id: string;
+    text: string;
+    pageNumber?: number;
+    difficulty?: string;
+  }>;
+}
+
 // Request body type
 interface AgentRequest {
   message: string;
@@ -68,6 +80,7 @@ interface AgentRequest {
   screenshot?: string; // Base64 data URL
   whiteboardTopic?: string;
   model?: ModelId; // Selected AI model
+  documentContext?: DocumentContext[]; // Uploaded study materials
 }
 
 /**
@@ -261,6 +274,44 @@ function buildSystemPrompt(request: AgentRequest): string {
     ? `\n\nThis whiteboard is about: ${request.whiteboardTopic}`
     : "";
 
+  // Build document context from uploaded PDFs/study materials
+  let documentContext = "";
+  if (request.documentContext && request.documentContext.length > 0) {
+    const docLines: string[] = [];
+    docLines.push("\n\n## UPLOADED STUDY MATERIALS (USE THIS CONTEXT!)");
+    docLines.push(
+      "The student has uploaded the following documents. Use this content to provide relevant help:\n"
+    );
+
+    for (const doc of request.documentContext) {
+      docLines.push(`### Document: ${doc.filename}`);
+
+      if (doc.extractedContent) {
+        // Truncate if too long
+        const content =
+          doc.extractedContent.length > 3000
+            ? doc.extractedContent.slice(0, 3000) + "...[truncated]"
+            : doc.extractedContent;
+        docLines.push(`Content:\n${content}\n`);
+      }
+
+      if (doc.problems && doc.problems.length > 0) {
+        docLines.push("Problems/Exercises from this document:");
+        for (const problem of doc.problems) {
+          docLines.push(
+            `- ${problem.text}${problem.difficulty ? ` (${problem.difficulty})` : ""}`
+          );
+        }
+        docLines.push("");
+      }
+    }
+
+    docLines.push(
+      "**When answering questions, reference and use the content from these documents!**"
+    );
+    documentContext = docLines.join("\n");
+  }
+
   // Find dominant text size for consistency (or use good defaults)
   const dominantSize = findDominantTextSize(request.shapes) || {
     size: "l",
@@ -293,15 +344,47 @@ ${
   const safeY = contentBounds ? contentBounds.bottomY : centerY;
   const safeX = contentBounds ? contentBounds.minX : centerX - 100;
 
-  return `You are an AI assistant that helps students learn by interacting with a whiteboard canvas.
-You can draw shapes, add text, highlight areas, and provide explanations.
+  return `You are an AI tutor that helps students learn by guiding them through problems on a whiteboard canvas.
+You can draw shapes, add text, highlight areas, create practice problems, and provide educational guidance.
+
+## CRITICAL EDUCATIONAL GUIDELINES
+
+**DEFAULT BEHAVIOR: Guide, don't solve!**
+By default, you should help students LEARN by guiding them, not by giving direct answers.
+
+**Default actions (when user asks general questions):**
+1. **Create guiding questions** - "What do you think happens next?"
+2. **Provide hints** - Subtle clues pointing in the right direction
+3. **Break down problems** - Create step-by-step frameworks for them to fill in
+4. **Highlight key concepts** - Show what to focus on without solving
+5. **Create practice problems** - Similar but simpler versions to practice
+6. **Show the method** - Explain HOW to approach it, not the final answer
+
+**EXCEPTION: When user EXPLICITLY asks for answers**
+If the user says things like:
+- "give me the answer"
+- "show me the solution" 
+- "solve this for me"
+- "what's the answer"
+- "just tell me"
+- "I give up, show me"
+
+Then you SHOULD provide the complete answer/solution with step-by-step explanation!
+
+**Quick Decision Guide:**
+- "Help me with this" → Guide with hints and questions
+- "I'm stuck" → Give a hint, not the answer
+- "Can you explain this?" → Explain the concept, show the method
+- "Give me the answer" → ✅ Provide the full solution
+- "Solve this for me" → ✅ Provide the full solution
+- "What's 2+2?" → ✅ Provide the answer (simple factual questions are OK)
 
 **YOUR #1 PRIORITY: CLEAN, NON-OVERLAPPING LAYOUT!**
 - ALWAYS analyze the canvas FIRST before creating anything
 - NEVER place shapes that overlap with existing content
 - ALWAYS use the "place" action to position shapes relative to existing content
 - ALWAYS include proper spacing (50+ pixels between new content and existing content)
-${topicContext}
+${topicContext}${documentContext}
 
 ## Current Canvas State
 
@@ -801,6 +884,30 @@ export async function POST(request: NextRequest) {
 
     const stream = new ReadableStream({
       async start(controller) {
+        let isClosed = false;
+
+        // Safe enqueue helper that checks if controller is closed
+        const safeEnqueue = (data: string) => {
+          if (isClosed) return;
+          try {
+            controller.enqueue(encoder.encode(data));
+          } catch (e) {
+            // Controller might be closed by client disconnect
+            isClosed = true;
+          }
+        };
+
+        // Safe close helper
+        const safeClose = () => {
+          if (isClosed) return;
+          try {
+            controller.close();
+            isClosed = true;
+          } catch {
+            isClosed = true;
+          }
+        };
+
         try {
           const { textStream } = streamText({
             model: getGatewayModel(selectedModel),
@@ -814,6 +921,9 @@ export async function POST(request: NextRequest) {
           let startTime = Date.now();
 
           for await (const text of textStream) {
+            // Check if controller was closed (client disconnected)
+            if (isClosed) break;
+
             buffer += text;
 
             // Clean markdown code block markers
@@ -841,7 +951,7 @@ export async function POST(request: NextRequest) {
                   time: Date.now() - startTime,
                 };
                 const data = `data: ${JSON.stringify(streamingAction)}\n\n`;
-                controller.enqueue(encoder.encode(data));
+                safeEnqueue(data);
                 maybeIncompleteAction = null;
               }
               cursor++;
@@ -867,28 +977,31 @@ export async function POST(request: NextRequest) {
                 time: Date.now() - startTime,
               };
               const data = `data: ${JSON.stringify(streamingAction)}\n\n`;
-              controller.enqueue(encoder.encode(data));
+              safeEnqueue(data);
             }
           }
 
           // Finalize any remaining incomplete action
-          if (maybeIncompleteAction) {
+          if (maybeIncompleteAction && !isClosed) {
             const finalAction = {
               ...maybeIncompleteAction,
               complete: true,
               time: Date.now() - startTime,
             };
             const data = `data: ${JSON.stringify(finalAction)}\n\n`;
-            controller.enqueue(encoder.encode(data));
+            safeEnqueue(data);
           }
 
-          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-          controller.close();
+          safeEnqueue("data: [DONE]\n\n");
+          safeClose();
         } catch (error) {
-          console.error("Stream error:", error);
-          const errorData = `data: ${JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" })}\n\n`;
-          controller.enqueue(encoder.encode(errorData));
-          controller.close();
+          // Only log actual errors, not controller closed errors
+          if (!isClosed) {
+            console.error("Stream error:", error);
+            const errorData = `data: ${JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" })}\n\n`;
+            safeEnqueue(errorData);
+          }
+          safeClose();
         }
       },
     });

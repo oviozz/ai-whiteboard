@@ -36,9 +36,6 @@ type HeaderTutorIndicatorProps = {
 export default function HeaderTutorIndicator({
   className,
 }: HeaderTutorIndicatorProps) {
-  // AI Tutor is currently disabled
-  return null;
-
   const {
     activeHint,
     activeTab,

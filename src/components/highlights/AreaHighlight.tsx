@@ -60,7 +60,11 @@ export function AreaHighlight({
           width: maxX - minX,
           height: maxY - minY,
           pointerEvents: "none",
-          zIndex: 1000,
+          zIndex: 100,
+          // Prevent flickering during canvas updates
+          willChange: "transform",
+          contain: "layout style paint",
+          isolation: "isolate",
         }}
       >
         {sides.map((side, j) => {
@@ -92,7 +96,8 @@ export function AreaHighlight({
             fontSize: "12px",
             fontWeight: 500,
             pointerEvents: "none",
-            zIndex: 1001,
+            zIndex: 101,
+            willChange: "transform",
           }}
         >
           {label}

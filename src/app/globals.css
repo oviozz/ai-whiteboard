@@ -228,6 +228,9 @@ body {
   position: relative;
   width: 100%;
   height: 100%;
+  /* Prevent flickering during updates */
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
 }
 
 .tldraw-container .tl-container {
@@ -249,10 +252,31 @@ body {
 
 .tldraw-container .tl-background {
   background-color: #ffffff !important;
+  /* Prevent flickering */
+  will-change: auto;
 }
 
 .tldraw-container .tl-canvas {
   background-color: #ffffff !important;
+  /* Ensure smooth rendering */
+  transform: translateZ(0);
+}
+
+/* Fix eraser visual glitch - ensure proper layering */
+.tldraw-container .tl-shapes {
+  will-change: auto;
+}
+
+/* Prevent overlay components from causing flicker */
+.tldraw-container [data-testid="InFrontOfTheCanvas"] {
+  pointer-events: none;
+  will-change: auto;
+  contain: layout style;
+}
+
+/* Smooth shape transitions during delete/erase */
+.tldraw-container .tl-shape {
+  will-change: auto;
 }
 
 /* Dark mode - clean dark background */
@@ -416,6 +440,20 @@ body {
 
 .streaming-dot {
   animation: streaming-dot 1s ease-in-out infinite;
+}
+
+/* Shimmer effect for processing state */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 1.5s ease-in-out infinite;
 }
 
 /* Accept/Reject button hover effects */
