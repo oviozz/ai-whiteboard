@@ -7,8 +7,8 @@ type LandingPageProps = {
 export default async function LandingPageLayout({ children }: LandingPageProps){
 
     return (
-        <div className={"flex flex-col p-4"}>
-            <div className={"mx-auto max-w-screen-xl w-full"}>
+        <div className={"flex flex-col"}>
+            <div className={"mx-auto max-w-screen-xl w-full px-4 py-4"}>
                 <PublicNavbar />
             </div>
             {children}

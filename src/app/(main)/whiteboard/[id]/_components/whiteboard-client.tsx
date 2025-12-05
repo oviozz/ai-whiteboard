@@ -10,6 +10,7 @@ import WhiteboardHeader from "./whiteboard-header"
 import WhiteboardSidebar from "./whiteboard-sidebar"
 import TldrawCanvas from "./tldraw-canvas"
 import SidebarChatbot from "./sidebar-chatbot/sidebar-chatbot"
+import QuizDrawer from "./quiz-drawer"
 import { TldrawEditorProvider } from "@/contexts/tldraw-editor-context"
 import ProactiveTutorProvider from "@/components/ai-tutor/proactive-tutor-provider"
 import SolveItAllProvider from "@/components/providers/solve-it-all-provider"
@@ -99,6 +100,9 @@ export default function WhiteboardClient({ whiteboardId }: WhiteboardClientProps
           isOpen={isChatOpen}
           onToggle={() => setIsChatOpen(!isChatOpen)}
         />
+
+        {/* Quiz Drawer - renders as modal */}
+        <QuizDrawer whiteboardID={whiteboardId} />
       </div>
     </TldrawEditorProvider>
   )

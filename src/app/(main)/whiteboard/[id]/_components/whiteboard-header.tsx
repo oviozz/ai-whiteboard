@@ -1,11 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, FileText, FileImage, ExternalLink } from "lucide-react";
+import { ArrowLeft, FileText, FileImage, ExternalLink, Share2 } from "lucide-react";
 import { Id } from "../../../../../../convex/_generated/dataModel";
 import { useQuery } from "convex/react";
 import { api } from "../../../../../../convex/_generated/api";
 import HeaderTutorIndicator from "@/components/ai-tutor/header-tutor-indicator";
+import ShareDialog from "./share-dialog";
 
 type WhiteboardHeaderProps = {
     whiteboardID: Id<"whiteboards">;
@@ -13,6 +15,8 @@ type WhiteboardHeaderProps = {
 };
 
 export default function WhiteboardHeader({ whiteboardID, whiteboardName }: WhiteboardHeaderProps) {
+    const [isShareOpen, setIsShareOpen] = useState(false);
+    
     const whiteboard_info = useQuery(api.whiteboards.getWhiteboardID, {
         whiteboardID
     });
@@ -72,10 +76,26 @@ export default function WhiteboardHeader({ whiteboardID, whiteboardName }: White
                 </div>
             </div>
             
-            {/* AI Tutor Indicator - positioned outside header, top-right */}
-            <div className="absolute top-3 right-4 z-10">
+            {/* Right side controls - Share button and AI Tutor */}
+            <div className="absolute top-3 right-4 z-10 flex items-center gap-3">
+                {/* Share Button */}
+                <button
+                    onClick={() => setIsShareOpen(true)}
+                    className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-200 rounded-lg hover:border-slate-300 hover:shadow-sm transition-all"
+                >
+                    <Share2 className="w-4 h-4" />
+                    <span className="hidden sm:inline">Share</span>
+                </button>
+                
+                {/* AI Tutor Indicator */}
                 <HeaderTutorIndicator />
             </div>
+            
+            {/* Share Dialog */}
+            <ShareDialog 
+                isOpen={isShareOpen} 
+                onClose={() => setIsShareOpen(false)} 
+            />
         </div>
     );
 }

@@ -18,6 +18,7 @@ import {
   Redo2,
   Palette,
   Sparkles,
+  GraduationCap,
 } from "lucide-react";
 import { useMutation } from "convex/react";
 import { api } from "../../../../../../convex/_generated/api";
@@ -620,6 +621,14 @@ export default function WhiteboardSidebar({
     window.dispatchEvent(solveEvent);
   }, [editor, setSolveLoading, whiteboardID]);
 
+  const handleQuizMe = useCallback(() => {
+    // Dispatch event to open quiz drawer
+    const quizEvent = new CustomEvent('open-quiz-drawer', {
+      detail: { whiteboardID }
+    });
+    window.dispatchEvent(quizEvent);
+  }, [whiteboardID]);
+
   const handleUndo = useCallback(() => {
     if (!editor) return;
     editor.undo();
@@ -774,6 +783,16 @@ export default function WhiteboardSidebar({
 
       {/* Action Buttons */}
       <div className="p-3 border-t border-slate-200 dark:border-slate-700 space-y-2">
+        {/* Quiz Me Button */}
+        <SidebarButton
+          action={handleQuizMe}
+          icon={GraduationCap}
+          label="Quiz Me"
+          isCollapsed={collapsed}
+          className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:from-emerald-600 hover:to-teal-700"
+          disabled={!editor}
+        />
+        
         {/* Solve it All Button */}
         <SidebarButton
           action={handleSolve}
